@@ -58,7 +58,7 @@
 
       inline operator DATA *()
       {
-         #if !defined(HXCPP_M64) && !defined(HXCPP_ARM64) (_MSC_VER >= 1400)
+         #if !defined(HXCPP_M64) && !defined(HXCPP_ARM64) && (_MSC_VER >= 1400)
          const size_t kTibExtraTlsOffset = 0xF94;
 
          if (FAST || mSlot < kMaxInlineSlots)
