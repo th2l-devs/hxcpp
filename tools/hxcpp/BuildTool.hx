@@ -646,6 +646,8 @@ class BuildTool
                   }
             });
          }
+         if (compile_progress!=null)
+            compile_progress.finish();
          Profile.pop();
 
          if (CompileCache.hasCache && group.mAsLibrary && mLinkers.exists("static_link"))
@@ -1832,6 +1834,24 @@ class BuildTool
             Log.v('${BOLD}${YELLOW}No specified toolchain${NORMAL}');
          if (Log.verbose) Log.println("");
 
+         // Enable the compiler object-file cache by default for much faster
+         // (re)builds: unchanged sources are reused across builds, and on MSVC
+         // this also switches debug info to -Z7, removing the shared-PDB
+         // (mspdbsrv) serialization bottleneck during parallel compiles.
+         // Override the location with HXCPP_COMPILE_CACHE, or turn it off with
+         // HXCPP_COMPILE_CACHE=none.
+         if (!defines.exists("HXCPP_COMPILE_CACHE"))
+         {
+            var cacheHome = env.exists("HOME") ? env.get("HOME") :
+                            env.exists("USERPROFILE") ? env.get("USERPROFILE") : null;
+            if (cacheHome != null)
+               defines.set("HXCPP_COMPILE_CACHE", cacheHome + "/.hxcpp_cache");
+         }
+         if (defines.get("HXCPP_COMPILE_CACHE")=="none")
+            defines.remove("HXCPP_COMPILE_CACHE");
+         // Cap the cache so it self-trims instead of growing without bound.
+         if (!defines.exists("HXCPP_CACHE_MB"))
+            defines.set("HXCPP_CACHE_MB", "4000");
 
          if (targets.length==0)
             targets.push("default");

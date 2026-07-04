@@ -393,33 +393,15 @@ class Compiler
 
          if (!Log.verbose)
          {
-            var tagInfo = inFile.mTags==null ? "" : " " + inFile.mTags.split(",");
-
-            var fileName = inFile.mName;
-            var split = fileName.split ("/");
-            if (split.length > 1)
-            {
-               fileName = " \x1b[2m-\x1b[0m \x1b[33m" + split.slice(0, split.length - 1).join("/") + "/\x1b[33;1m" + split[split.length - 1] + "\x1b[0m";
-            }
-            else
-            {
-               fileName = " \x1b[2m-\x1b[0m \x1b[33;1m" + fileName + "\x1b[0m";
-            }
-            fileName += " \x1b[3m" + tagInfo + "\x1b[0m";
-
-            printMutex.acquire();
-
+            // compact live view: a progress bar plus the previous/current file,
+            // instead of one scrolling line per compile.
             if (inProgess != null)
             {
-               inProgess.progress(1);
-               fileName = inProgess.getProgress() + fileName;
+               Log.lock();
+               if ((inTid >= 0 && BuildTool.threadExitCode == 0) || inTid < 0)
+                  inProgess.step(inFile.mName, inFile.mTags);
+               Log.unlock();
             }
-
-            if((inTid >= 0 && BuildTool.threadExitCode == 0) || inTid < 0)
-            {
-               Log.info(fileName);
-            }
-            printMutex.release();
          }
 
          if (inTid >= 0)
