@@ -437,6 +437,13 @@ class Compiler
             sys.io.File.copy(obj_name, cacheName);
          }
       }
+      else if (inProgess != null)
+      {
+         // served from the compile cache: still one of `total`, so keep the bar honest
+         Log.lock();
+         inProgess.skip();
+         Log.unlock();
+      }
 
       return obj_name;
    }

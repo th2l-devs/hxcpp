@@ -211,6 +211,12 @@ class Log
       statusLines = 3;
    }
 
+   /** Whether the status block is currently on screen. **/
+   public static function statusVisible():Bool
+   {
+      return statusLines > 0;
+   }
+
    /** Erases the status block, leaving the cursor where the block began. **/
    public static function clearStatus():Void
    {

@@ -582,35 +582,12 @@ class BuildTool
                   first = false;
                   Log.lock();
                   Log.println("");
-                  Log.info("\x1b[33;1mCompiling group: " + group.mId + " (" + to_be_compiled.length + " file" + (to_be_compiled.length==1 ? "" : "s") + ")\x1b[0m");
-                  var message = "\x1b[1m" + (nvcc ? getNvcc() : mCompiler.mExe) + "\x1b[0m";
-                  var flags = group.mCompilerFlags;
-                  if (!nvcc)
-                     flags = flags.concat(mCompiler.getFlagStrings());
-                  else
-                     flags = flags.concat( BuildTool.getNvccFlags() );
-
-                  for (compilerFlag in flags)
-                  {
-                     if (StringTools.startsWith(compilerFlag, "-D"))
-                     {
-                        var index = compilerFlag.indexOf("(");
-                        if (index > -1)
-                        {
-                           message += " \x1b[1m" + compilerFlag.substr(0, index) + "\x1b[0m\x1b[2m" + compilerFlag.substr(index) + "\x1b[0m";
-                        }
-                        else
-                        {
-                           message += " \x1b[1m" + compilerFlag + "\x1b[0m";
-                        }
-                     }
-                     else
-                     {
-                        message += " \x1b[0m" + compilerFlag + "\x1b[0m";
-                     }
-                  }
-                  message += " \x1b[2m...\x1b[0m \x1b[2mtags=" + group.mTags.split(",") + "\x1b[0m";
-                  Log.info(message);
+                  // Compact group header. The full compiler command line + flags are
+                  // only worth printing in verbose mode, where every invocation is
+                  // logged anyway - here they were the single biggest source of noise.
+                  var count = to_be_compiled.length;
+                  Log.info(Log.YELLOW + group.mId + Log.NORMAL
+                     + Log.DIM + " (" + count + " file" + (count==1 ? "" : "s") + ")" + Log.NORMAL);
                   Log.unlock();
                }
                groupMutex.release();

@@ -36,6 +36,17 @@ class Progress {
 		Log.drawStatus(bar(), prevAction, curAction);
 	}
 
+	/**
+		Account for a file served from the compile cache. It still advances the
+		bar (it is one of `total`), but it only redraws when the block is already
+		on screen - so a fully cached group stays silent instead of flashing a bar.
+	**/
+	public function skip() {
+		current++;
+		if (Log.statusVisible())
+			Log.drawStatus(bar(), prevAction, curAction);
+	}
+
 	/** Erase the block once the phase is done. **/
 	public function finish() {
 		Log.clearStatus();
