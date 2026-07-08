@@ -381,6 +381,21 @@ class BuildTool
          Tools.exit(inCode);
    }
 
+   /**
+      Strips the internal `__..__` wrapping off a file-group id, so the generated
+      lime/hxcpp groups read as `resources`, `main`, `lib`, `externs` rather than
+      `__resources__`, `__main__`, ... Plain ids like `haxe` pass through.
+   **/
+   public static function prettyGroupName(inId:String):String
+   {
+      var name = inId;
+      while (StringTools.startsWith(name, "_"))
+         name = name.substr(1);
+      while (StringTools.endsWith(name, "_"))
+         name = name.substr(0, name.length-1);
+      return name=="" ? inId : name;
+   }
+
    public function buildTarget(inTarget:String, inDestination:String)
    {
       //var dependDebug = function(s:String) Log.error(s);
@@ -426,6 +441,15 @@ class BuildTool
          PathManager.mkdir(mCompiler.mObjDir);
 
       var baseDir = Sys.getCwd();
+
+      // A single bar for the whole target, spanning every group ("haxe",
+      // "resources", ...) instead of restarting from zero for each one. It measures
+      // work actually to be done, so an incremental build that recompiles 2 files
+      // shows a real 0->100% rather than sitting at 99% because everything else was
+      // already up to date. A group's share is only known after its dependency
+      // check, hence addTotal() as each group starts.
+      var compile_progress = Log.mute ? null : new Progress(0, 0);
+
       for(group in target.mFileGroups)
       {
          var useCache = CompileCache.hasCache && group.mUseCache;
@@ -572,7 +596,8 @@ class BuildTool
 
          var nvcc = group.mNvcc;
          var first = true;
-         var groupHeader = (!Log.quiet && !Log.verbose) ? function()
+         // shown in verbose too now that it is a single compact line
+         var groupHeader = (!Log.quiet) ? function()
          {
             if (first)
             {
@@ -583,11 +608,11 @@ class BuildTool
                   Log.lock();
                   Log.println("");
                   // Compact group header. The full compiler command line + flags are
-                  // only worth printing in verbose mode, where every invocation is
-                  // logged anyway - here they were the single biggest source of noise.
+                  // only worth printing with -vv, where every invocation is logged
+                  // anyway - here they were the single biggest source of noise.
                   var count = to_be_compiled.length;
-                  Log.info(Log.YELLOW + group.mId + Log.NORMAL
-                     + Log.DIM + " (" + count + " file" + (count==1 ? "" : "s") + ")" + Log.NORMAL);
+                  Log.info(Log.mark() + " " + Log.YELLOW + prettyGroupName(group.mId) + Log.NORMAL
+                     + Log.DIM + "  " + count + " file" + (count==1 ? "" : "s") + Log.NORMAL);
                   Log.unlock();
                }
                groupMutex.release();
@@ -596,9 +621,9 @@ class BuildTool
 
          Profile.push("compile");
 
-         var compile_progress = null;
-         if (!Log.verbose)
-            compile_progress = new Progress(0,to_be_compiled.length);
+         // this group's share of the single bar is now known
+         if (compile_progress!=null)
+            compile_progress.addTotal(to_be_compiled.length);
 
          if (threadPool==null)
          {
@@ -623,8 +648,6 @@ class BuildTool
                   }
             });
          }
-         if (compile_progress!=null)
-            compile_progress.finish();
          Profile.pop();
 
          if (CompileCache.hasCache && group.mAsLibrary && mLinkers.exists("static_link"))
@@ -664,6 +687,10 @@ class BuildTool
          if (group.mDir!="." && group.mSetImportDir)
             Sys.setCwd( baseDir );
       }
+
+      // every group is done - retire the single bar before linking prints
+      if (compile_progress!=null)
+         compile_progress.finish();
 
       switch(target.mTool)
       {
@@ -1534,6 +1561,7 @@ class BuildTool
       if (defines.exists("HXCPP_NO_COLOUR") || defines.exists("HXCPP_NO_COLOR"))
          Log.colorSupported = false;
       Log.verbose = defines.exists("HXCPP_VERBOSE");
+      Log.showCommands = defines.exists("HXCPP_LOG_COMMANDS");
       Log.showSetup = defines.exists("HXCPP_LOG_SETUP");
       exitOnThreadError = defines.exists("HXCPP_EXIT_ON_ERROR");
 
@@ -1683,6 +1711,12 @@ class BuildTool
          }
          else if (arg=="-v" || arg=="-verbose")
             Log.verbose = true;
+         else if (arg=="-vv" || arg=="-commands")
+         {
+            // -vv = verbose + echo every compiler/linker command line
+            Log.verbose = true;
+            Log.showCommands = true;
+         }
          else if (arg=="-nocolor")
             Log.colorSupported = false;
          else if (arg.substr(0,2)=="-I")
@@ -1701,6 +1735,7 @@ class BuildTool
       if (defines.exists("HXCPP_NO_COLOUR") || defines.exists("HXCPP_NO_COLOR"))
          Log.colorSupported = false;
       Log.verbose = Log.verbose || defines.exists("HXCPP_VERBOSE");
+      Log.showCommands = Log.showCommands || defines.exists("HXCPP_LOG_COMMANDS");
       Log.quiet = defines.exists("HXCPP_QUIET") && !Log.verbose;
       Log.mute = defines.exists("HXCPP_SILENT") && !Log.quiet && !Log.verbose;
 

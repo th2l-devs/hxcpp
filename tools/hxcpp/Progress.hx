@@ -20,6 +20,15 @@ class Progress {
 	}
 
 	/**
+		Enlarge the denominator as each file group reveals how much work it has.
+		A group's `to_be_compiled` is only known once its dependency check has run,
+		so one bar spanning every group has to grow rather than be sized up front.
+	**/
+	public function addTotal(inFiles:Int) {
+		total += inFiles;
+	}
+
+	/**
 		Advance the count by one and redraw the live block for `fileName`. The
 		current action becomes `compiling <file>`; the one it replaces slides up
 		to the "previous" line. Caller holds the print lock.
@@ -37,14 +46,19 @@ class Progress {
 	}
 
 	/**
-		Account for a file served from the compile cache. It still advances the
-		bar (it is one of `total`), but it only redraws when the block is already
-		on screen - so a fully cached group stays silent instead of flashing a bar.
+		Account for a file served from the compile cache. It is one of `total`, so it
+		advances and redraws the bar just like a real compile - otherwise a build that
+		opens with a long run of cache hits would leave the bar hidden and then have
+		it appear, disconcertingly, at 20%.
 	**/
-	public function skip() {
+	public function skip(fileName:String) {
 		current++;
-		if (Log.statusVisible())
-			Log.drawStatus(bar(), prevAction, curAction);
+		var action = "cached " + baseName(fileName);
+		if (action != curAction) {
+			prevAction = curAction;
+			curAction = action;
+		}
+		Log.drawStatus(bar(), prevAction, curAction);
 	}
 
 	/** Erase the block once the phase is done. **/
@@ -63,7 +77,7 @@ class Progress {
 		var fill = unicode ? "━" : "=";
 		var track = unicode ? "━" : "-";
 		var pct = Std.int(frac * 100);
-		return Log.PINK + rep(fill, filled) + Log.DIM + rep(track, WIDTH - filled) + Log.NORMAL
+		return Log.BAR + rep(fill, filled) + Log.DIM + rep(track, WIDTH - filled) + Log.NORMAL
 			+ "  " + Log.GRAY + pct + "%" + Log.NORMAL;
 	}
 

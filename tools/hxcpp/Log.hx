@@ -45,9 +45,14 @@ class Log
    // 256-colour palette used by the compact build view. Deliberately 256-colour
    // (not 24-bit truecolor) because classic Windows conhost renders these
    // reliably while choking on truecolor.
-   public static inline var PINK = "\x1b[38;5;205m"; // progress bar fill
-   public static inline var GRAY = "\x1b[38;5;7m";   // current line / info
-   public static inline var DIM  = "\x1b[38;5;8m";   // previous line / bar track
+   public static inline var BAR   = "\x1b[38;5;208m"; // progress bar fill (orange)
+   public static inline var GREEN = "\x1b[38;5;114m"; // stage marker ">" / done
+   public static inline var GRAY  = "\x1b[38;5;7m";   // current line / info
+   public static inline var DIM   = "\x1b[38;5;8m";   // previous line / bar track
+
+   /** Green stage marker: "›" on a UTF-8 console, ASCII ">" otherwise. **/
+   public static function mark():String
+      return GREEN + (ensureUnicode() ? "›" : ">") + NORMAL;
 
    // ── live status block (bar + previous/current action) ───────────────────
    // Drawn at the "bottom"; any real log output calls clearStatus() first so

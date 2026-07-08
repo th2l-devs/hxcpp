@@ -6,6 +6,33 @@ using StringTools;
 
 class Linker
 {
+   /**
+      Label for the `link` line. Cached group libraries live at
+      `<cache>/<project>/lib/<toolchainprefix>_<project>` and their full path is
+      long and meaningless, so collapse them to `<project><ext>  (cache)`.
+      Anything outside the cache is printed as-is.
+   **/
+   static function linkLabel(outName:String):String
+   {
+      if (!CompileCache.hasCache || CompileCache.compileCache==null)
+         return outName;
+      var norm = outName.replace("\\", "/");
+      var cache = CompileCache.compileCache.replace("\\", "/");
+      if (norm.indexOf(cache)!=0)
+         return outName;
+
+      var parts = norm.split("/");
+      // .../<project>/lib/<file>
+      if (parts.length<3 || parts[parts.length-2]!="lib")
+         return parts[parts.length-1];
+
+      var project = parts[parts.length-3];
+      var base = parts[parts.length-1];
+      var dot = base.lastIndexOf(".");
+      var ext = dot==-1 ? "" : base.substr(dot);
+      return project + ext + Log.DIM + "  (cache)" + Log.NORMAL;
+   }
+
    public var mExe:String;
    public var mFlags:Array<String>;
    public var mOutFlag:String;
@@ -292,7 +319,7 @@ class Linker
          args = args.concat(libs);
 
          var result = ProcessManager.runCommand("", mExe, args, true, true, false,
-             "\x1b[1mLink: \x1b[0m" + out_name);
+             Log.mark() + " " + Log.GRAY + "link" + Log.NORMAL + "  " + linkLabel(out_name));
          if (result!=0)
          {
             Tools.exit(result);
