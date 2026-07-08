@@ -21,8 +21,16 @@ class Log
    public static var quiet:Bool = false;
    public static var verbose:Bool = false;
    public static var showSetup:Bool = false;
+   // Echo the full compiler/linker command line for every file. This is what -v
+   // used to do and it drowns everything else, so it now needs -vv (or the
+   // HXCPP_LOG_COMMANDS define). A failing command still prints in full.
+   public static var showCommands:Bool = false;
 
    public  static var colorSupported:Null<Bool> = null;
+   // Whether the console can render the box-drawing/tick glyphs. Independent of
+   // colour: a cp866/cp1251 PowerShell renders ANSI colour fine but turns "━"
+   // into mojibake. Forced with HXCPP_UNICODE / HXCPP_NO_UNICODE.
+   public  static var unicodeSupported:Null<Bool> = null;
    private static var sentWarnings = new Map<String,Bool>();
 
    public static var printMutex:Mutex;
@@ -60,7 +68,7 @@ class Log
    public static function error(message:String, verboseMessage:String = "", e:Dynamic = null, terminate:Bool = true):Void
    {
       // ✗ glyph on a UTF-8 console, ASCII 'x' otherwise
-      var glyph = ensureColor() ? "✗ " : "x ";
+      var glyph = ensureUnicode() ? "✗ " : "x ";
       var body = (verbose && verboseMessage != "") ? verboseMessage : message;
       var output;
       if (body == "")
@@ -146,41 +154,74 @@ class Log
 
    // Colour is on by default now; only turned off by the NO_COLOR convention
    // (or the explicit -nocolor / HXCPP_NO_COLOR opt-outs handled in BuildTool).
-   // On Windows we enable virtual-terminal (ANSI) processing on the real console
-   // up front so the codes render instead of printing as raw `←[..m`.
    public static function ensureColor():Bool
    {
-      if (colorSupported == null)
-         colorSupported = Sys.getEnv("NO_COLOR") == null;
-      if (colorSupported && !vtChecked)
-      {
-         vtChecked = true;
-         if (BuildTool.isWindows)
-            enableWindowsVT();
-      }
-      return colorSupported;
+      probeConsole();
+      return colorSupported == true;
    }
 
-   // One-time: flip ENABLE_VIRTUAL_TERMINAL_PROCESSING on the real console
-   // (CONOUT$) via a tiny PowerShell shim, so ANSI escapes are interpreted.
-   static function enableWindowsVT():Void
+   /** Whether "━" / "✗" are safe to print, or we must fall back to ASCII. **/
+   public static function ensureUnicode():Bool
    {
+      probeConsole();
+      return unicodeSupported == true;
+   }
+
+   /**
+      One-time console probe. On Windows a single PowerShell shim both flips
+      ENABLE_VIRTUAL_TERMINAL_PROCESSING on the real console (CONOUT$), so ANSI
+      escapes render instead of printing as raw `←[..m`, and reports the output
+      code page - only 65001 (UTF-8) can render the box-drawing glyphs, so a
+      cp866/cp1251 console falls back to ASCII.
+   **/
+   static function probeConsole():Void
+   {
+      if (vtChecked)
+         return;
+      vtChecked = true;
+
+      if (colorSupported == null)
+         colorSupported = Sys.getEnv("NO_COLOR") == null;
+
+      if (Sys.getEnv("HXCPP_NO_UNICODE") != null)
+         unicodeSupported = false;
+      else if (Sys.getEnv("HXCPP_UNICODE") != null)
+         unicodeSupported = true;
+
+      // Deliberately not BuildTool.isWindows: that is assigned during setup and may
+      // still be false the first time anything is logged, which would cache the
+      // wrong answer here (probeConsole only ever runs once).
+      if (Sys.systemName() != "Windows")
+      {
+         // unix terminals are UTF-8
+         if (unicodeSupported == null)
+            unicodeSupported = true;
+         return;
+      }
+
+      var codePage:Null<Int> = null;
       try
       {
          var csharp =
             "[DllImport(\"kernel32.dll\",SetLastError=true)]public static extern System.IntPtr CreateFileW(string n,uint a,uint s,System.IntPtr se,uint d,uint f,System.IntPtr t);"
             + "[DllImport(\"kernel32.dll\")]public static extern bool GetConsoleMode(System.IntPtr h,out uint m);"
             + "[DllImport(\"kernel32.dll\")]public static extern bool SetConsoleMode(System.IntPtr h,uint m);";
-         var ps =
-            "$s='" + csharp + "';"
-            + "try{$k=Add-Type -MemberDefinition $s -Name Vt -Namespace HxVt -PassThru -ErrorAction Stop;"
-            + "$h=$k::CreateFileW('CONOUT$',0x40000000,3,[System.IntPtr]::Zero,3,0,[System.IntPtr]::Zero);"
-            + "$m=0;if($k::GetConsoleMode($h,[ref]$m)){[void]$k::SetConsoleMode($h,($m -bor 4))}}catch{}";
+         var vt = colorSupported
+            ? "try{$k=Add-Type -MemberDefinition $s -Name Vt -Namespace HxVt -PassThru -ErrorAction Stop;"
+              + "$h=$k::CreateFileW('CONOUT$',0x40000000,3,[System.IntPtr]::Zero,3,0,[System.IntPtr]::Zero);"
+              + "$m=0;if($k::GetConsoleMode($h,[ref]$m)){[void]$k::SetConsoleMode($h,($m -bor 4))}}catch{};"
+            : "";
+         var ps = "$s='" + csharp + "';" + vt + "try{[Console]::OutputEncoding.CodePage}catch{'x'}";
          var p = new Process("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps]);
+         var out = StringTools.replace(p.stdout.readAll().toString(), "\r", "");
          p.exitCode();
          p.close();
+         codePage = Std.parseInt(StringTools.trim(out));
       }
       catch (e:Dynamic) {}
+
+      if (unicodeSupported == null)
+         unicodeSupported = (codePage == 65001);
    }
 
    private static function stripColor(output:String):String

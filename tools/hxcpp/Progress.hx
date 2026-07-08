@@ -8,7 +8,7 @@ class Progress {
 	var prevAction:String = "";
 	var curAction:String = "";
 
-	static inline var WIDTH = 28;
+	static inline var WIDTH = 18;
 
 	public function new(inCurrent:Int, inTotal:Int) {
 		current = inCurrent;
@@ -57,9 +57,13 @@ class Progress {
 		if (frac < 0) frac = 0;
 		if (frac > 1) frac = 1;
 		var filled = Math.round(frac * WIDTH);
-		var glyph = Log.ensureColor() ? "━" : "="; // ━ on a proper console, = otherwise
+		// box-drawing on a UTF-8 console; on cp866/cp1251 it would be mojibake, so
+		// fall back to ASCII with a distinct fill/track so it still reads as a bar
+		var unicode = Log.ensureUnicode();
+		var fill = unicode ? "━" : "=";
+		var track = unicode ? "━" : "-";
 		var pct = Std.int(frac * 100);
-		return Log.PINK + rep(glyph, filled) + Log.DIM + rep(glyph, WIDTH - filled) + Log.NORMAL
+		return Log.PINK + rep(fill, filled) + Log.DIM + rep(track, WIDTH - filled) + Log.NORMAL
 			+ "  " + Log.GRAY + pct + "%" + Log.NORMAL;
 	}
 
