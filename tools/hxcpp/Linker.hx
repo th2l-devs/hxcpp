@@ -318,8 +318,9 @@ class Linker
 
          args = args.concat(libs);
 
+         // leading blank line separates the link step from the run of group headers
          var result = ProcessManager.runCommand("", mExe, args, true, true, false,
-             Log.mark() + " " + Log.GRAY + "link" + Log.NORMAL + "  " + linkLabel(out_name));
+             "\n" + Log.mark() + " " + Log.GRAY + "link" + Log.NORMAL + "  " + linkLabel(out_name));
          if (result!=0)
          {
             Tools.exit(result);

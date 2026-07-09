@@ -606,7 +606,6 @@ class BuildTool
                {
                   first = false;
                   Log.lock();
-                  Log.println("");
                   // Compact group header. The full compiler command line + flags are
                   // only worth printing with -vv, where every invocation is logged
                   // anyway - here they were the single biggest source of noise.
