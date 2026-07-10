@@ -694,6 +694,10 @@ class BuildTool
       switch(target.mTool)
       {
          case "linker":
+            // one blank line separating the group list from the final link step
+            // (the per-group static libs above stay flush with their headers)
+            if (!Log.quiet)
+               Log.println("");
             Profile.push("linker");
             if (mPrelinkers.exists(target.mToolID))
             {
