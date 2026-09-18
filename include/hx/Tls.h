@@ -41,7 +41,7 @@
       {
          mSlot = TlsAlloc();
          TlsSetValue(mSlot,0);
-         #ifdef HXCPP_M64
+         #if (defined(HXCPP_M64) || defined(HXCPP_ARM64))
          mFastOffset = mSlot*sizeof(void *) + 0x1480;
          #else
          if (FAST || mSlot < kMaxInlineSlots)
@@ -58,7 +58,7 @@
 
       inline operator DATA *()
       {
-         #if !defined(HXCPP_M64) && (_MSC_VER >= 1400)
+         #if !defined(HXCPP_M64) && !defined(HXCPP_ARM64) && (_MSC_VER >= 1400)
          const size_t kTibExtraTlsOffset = 0xF94;
 
          if (FAST || mSlot < kMaxInlineSlots)

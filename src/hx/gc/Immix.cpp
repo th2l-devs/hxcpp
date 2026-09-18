@@ -287,6 +287,19 @@ static std::atomic_int sgAllocsSinceLastSpam{};
    #define MEM_STAMP(t)
 #endif
 
+// Always-on GC stop-the-world pause tracking, queried via __hxcpp_gc_pause_info.
+static double sGcPauseStart    = 0;
+static double sGcLastPauseMs   = 0;
+static double sGcMaxPauseMs    = 0;
+static double sGcTotalPauseMs  = 0;
+static int    sGcCollectCount  = 0;
+static int    sGcMajorCount    = 0;
+static double sGcLastMajorMs   = 0;
+static double sGcMaxMajorMs    = 0;
+static double sGcTotalMajorMs  = 0;
+static int    sGcOver1FrameCnt = 0;
+static int    sGcOver2FrameCnt = 0;
+
 #if defined(HXCPP_GC_SUMMARY) || defined(HXCPP_GC_DYNAMIC_SIZE)
 struct ProfileCollectSummary
 {
@@ -3637,7 +3650,7 @@ public:
          if (!result)
          {
             GCLOG("Memory exhausted.\n");
-            #ifndef HXCPP_M64
+            #if !defined(HXCPP_M64) && !defined(HXCPP_ARM64)
             GCLOG(" try 64 bit build.\n");
             #endif
             #ifndef HXCPP_GC_BIG_BLOCKS
@@ -4847,6 +4860,7 @@ public:
       #endif
 
       STAMP(t0)
+      sGcPauseStart = __hxcpp_time_stamp();
 
       // We are the collector - all must wait for us
       LocalAllocator *this_local = 0;
@@ -5238,6 +5252,7 @@ public:
       if (!generational)
          sWorkingMemorySize = std::max( mem + targetFree, hx::sgMinimumWorkingMemory);
 
+
       #if defined(SHOW_FRAGMENTATION) || defined(SHOW_MEM_EVENTS)
       GCLOG("Target memory %s, using %s\n",  formatBytes(sWorkingMemorySize).c_str(), formatBytes(mem).c_str() );
       #endif
@@ -5379,6 +5394,23 @@ public:
         #endif
       #endif
 
+      {
+         // world resumes here - record the stop-the-world duration
+         double ms = (__hxcpp_time_stamp() - sGcPauseStart) * 1000.0;
+         sGcLastPauseMs = ms;
+         sGcTotalPauseMs += ms;
+         if (ms > sGcMaxPauseMs) sGcMaxPauseMs = ms;
+         sGcCollectCount++;
+         if (ms > 16.0) sGcOver1FrameCnt++;
+         if (ms > 33.0) sGcOver2FrameCnt++;
+         if (full)
+         {
+            sGcMajorCount++;
+            sGcLastMajorMs = ms;
+            sGcTotalMajorMs += ms;
+            if (ms > sGcMaxMajorMs) sGcMaxMajorMs = ms;
+         }
+      }
 
       PROFILE_COLLECT_SUMMARY_END;
    }
@@ -6641,7 +6673,7 @@ void *InternalNew(size_t inSize,bool inIsObject)
       }
       else
       {
-         #if defined(HXCPP_GC_MOVING) && defined(HXCPP_M64)
+         #if defined(HXCPP_GC_MOVING) && (defined(HXCPP_M64)||defined(HXCPP_ARM64))
          if (inSize<8)
             return tla->CallAlloc(8,0);
          #endif
@@ -6751,7 +6783,7 @@ void *InternalRealloc(size_t inFromSize, void *inData, size_t inSize, bool inExp
    {
       LocalAllocator *tla = GetLocalAlloc();
 
-      #if defined(HXCPP_GC_MOVING) && defined(HXCPP_M64)
+      #if defined(HXCPP_GC_MOVING) && (defined(HXCPP_M64)||defined(HXCPP_ARM64))
       if (inSize<8)
           new_data =  tla->CallAlloc(8,0);
       else
@@ -6966,6 +6998,34 @@ int   __hxcpp_gc_used_bytes()
    return sGlobalAlloc->MemUsage();
 }
 
+// GC pause stats: 0 last, 1 max, 2 total, 3 collects, 4 majors, 5 avg, 6 last major, 7 max major, 8 avg major, 9 >16ms, 10 >33ms; negative resets.
+double __hxcpp_gc_pause_info(int inWhat)
+{
+   if (inWhat < 0)
+   {
+      sGcLastPauseMs = sGcMaxPauseMs = sGcTotalPauseMs = 0;
+      sGcCollectCount = sGcMajorCount = 0;
+      sGcLastMajorMs = sGcMaxMajorMs = sGcTotalMajorMs = 0;
+      sGcOver1FrameCnt = sGcOver2FrameCnt = 0;
+      return 0;
+   }
+   switch(inWhat)
+   {
+      case 0: return sGcLastPauseMs;
+      case 1: return sGcMaxPauseMs;
+      case 2: return sGcTotalPauseMs;
+      case 3: return (double)sGcCollectCount;
+      case 4: return (double)sGcMajorCount;
+      case 5: return sGcCollectCount ? sGcTotalPauseMs/sGcCollectCount : 0.0;
+      case 6: return sGcLastMajorMs;
+      case 7: return sGcMaxMajorMs;
+      case 8: return sGcMajorCount ? sGcTotalMajorMs/sGcMajorCount : 0.0;
+      case 9: return (double)sGcOver1FrameCnt;
+      case 10: return (double)sGcOver2FrameCnt;
+   }
+   return 0;
+}
+
 void  __hxcpp_gc_do_not_kill(Dynamic inObj)
 {
    hx::GCDoNotKill(inObj.GetPtr());
@@ -7037,7 +7097,7 @@ void __hxcpp_gc_safe_point()
 
 //#define HXCPP_FORCE_OBJ_MAP
 
-#if defined(HXCPP_M64) || defined(HXCPP_GC_MOVING) || defined(HXCPP_FORCE_OBJ_MAP)
+#if defined(HXCPP_M64) || defined(HXCPP_ARM64) || defined(HXCPP_GC_MOVING) || defined(HXCPP_FORCE_OBJ_MAP)
 #define HXCPP_USE_OBJECT_MAP
 #endif
 
@@ -7071,7 +7131,7 @@ unsigned int __hxcpp_obj_hash(Dynamic inObj)
 {
    if (!inObj.mPtr) return 0;
    hx::Object *obj = inObj.mPtr;
-   #if defined(HXCPP_M64)
+   #if (defined(HXCPP_M64)||defined(HXCPP_ARM64))
    size_t h64 = (size_t)obj;
    return (unsigned int)(h64>>2) ^ (unsigned int)(h64>>32);
    #else

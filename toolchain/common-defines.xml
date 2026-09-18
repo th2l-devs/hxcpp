@@ -5,7 +5,7 @@
  <flag value="-DHXCPP_STATIC_CFFI" if="HXCPP_STATIC_CFFI" tag="cffi" />
  <flag value="-DHXCPP_ARM64" if="HXCPP_ARM64"/>
  <flag value="-DHXCPP_ARMV7" if="HXCPP_ARMV7"/>
- <flag value="-DHXCPP_M64" if="HXCPP_M64||HXCPP_ARM64||HXCPP_X86_64"/>
+ <flag value="-DHXCPP_M64" if="HXCPP_M64||HXCPP_X86_64" unless="HXCPP_ARM64" />
  <flag value="-DHXCPP_VISIT_ALLOCS" tag="haxe" />
  <flag value="-DHXCPP_FLOAT32" if="HXCPP_FLOAT32" tag="haxe" />
  <flag value="-DHXCPP_CHECK_POINTER" if="HXCPP_CHECK_POINTER" tag="haxe" />

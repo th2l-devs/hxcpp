@@ -403,21 +403,23 @@ class Setup
             }
          }
       }
-   }
+      else
+      {
+         Log.v('Using provided EMSDK ${ioDefines.get("EMSDK")}');
+      }
 
+      if (!ioDefines.exists("EMSDK_PYTHON"))
+      {
+         Log.v("No EMSDK_PYTHON provided, using 'python'");
+      }
+      else
+         Log.v('Using provided EMSDK_PYTHON ${ioDefines.get("EMSDK_PYTHON")}');
 
-   public static function isRaspberryPi()
-   {
-       var modelFile = '/sys/firmware/devicetree/base/model';
-       if( !FileSystem.exists( modelFile ) )
-           return false;
-       try {
-           var model = sys.io.File.getContent( modelFile );
-           return ~/Raspberry/.match( model );
-       } catch(e:Dynamic) {
-           trace( e );
-       }
-       return false;
+      if (!ioDefines.exists("EMSDK_NODE"))
+      {
+         Log.v("No EMSDK_NODE provided, using 'node'");
+         ioDefines.set("EMSDK_NODE", "node");
+      }
    }
 
    static public function startPdbServer()

@@ -66,6 +66,7 @@ class BuildTool
    var mNvccLinkFlags:Array<String>;
    var mDirtyList:Array<String>;
    var arm64:Bool;
+   var armv7:Bool;
    var m64:Bool;
    var m32:Bool;
    var defaultCStandard:Null<Int>;
@@ -138,8 +139,9 @@ class BuildTool
       m64 = mDefines.exists("HXCPP_M64");
       m32 = mDefines.exists("HXCPP_M32") || mDefines.exists("HXCPP_X86");
       arm64 = mDefines.exists("HXCPP_ARM64");
-      var otherArmArchitecture = mDefines.exists("HXCPP_ARMV6") || mDefines.exists("HXCPP_ARMV7") || mDefines.exists("HXCPP_ARMV7S");
-      if (m64==m32 && !arm64 && !otherArmArchitecture)
+      armv7 = mDefines.exists("HXCPP_ARMV7");
+      var otherArmArchitecture = mDefines.exists("HXCPP_ARMV6") || mDefines.exists("HXCPP_ARMV7S");
+      if (m64==m32 && !arm64 && !armv7 && !otherArmArchitecture)
       {
          var arch = mDefines.get("HXCPP_ARCH");
          if (arch!=null)
@@ -147,6 +149,7 @@ class BuildTool
             m64 = arch=="x86_64";
             m32 = arch=="x86";
             arm64 = arch=="arm64";
+            armv7 = arch=="armv7";
          }
          else if (mDefines.exists("android"))
          {
@@ -160,6 +163,7 @@ class BuildTool
             m64 = hostArch=="m64";
             m32 = hostArch=="m32";
             arm64 = hostArch=="arm64";
+            armv7 = hostArch=="armv7";
          }
 
          mDefines.remove(m32 ? "HXCPP_M64" : "HXCPP_M32");
@@ -395,6 +399,21 @@ class BuildTool
          Tools.exit(inCode);
    }
 
+   /**
+      Strips the internal `__..__` wrapping off a file-group id, so the generated
+      lime/hxcpp groups read as `resources`, `main`, `lib`, `externs` rather than
+      `__resources__`, `__main__`, ... Plain ids like `haxe` pass through.
+   **/
+   public static function prettyGroupName(inId:String):String
+   {
+      var name = inId;
+      while (StringTools.startsWith(name, "_"))
+         name = name.substr(1);
+      while (StringTools.endsWith(name, "_"))
+         name = name.substr(0, name.length-1);
+      return name=="" ? inId : name;
+   }
+
    public function buildTarget(inTarget:String, inDestination:String)
    {
       //var dependDebug = function(s:String) Log.error(s);
@@ -440,6 +459,15 @@ class BuildTool
          PathManager.mkdir(mCompiler.mObjDir);
 
       var baseDir = Sys.getCwd();
+
+      // A single bar for the whole target, spanning every group ("haxe",
+      // "resources", ...) instead of restarting from zero for each one. It measures
+      // work actually to be done, so an incremental build that recompiles 2 files
+      // shows a real 0->100% rather than sitting at 99% because everything else was
+      // already up to date. A group's share is only known after its dependency
+      // check, hence addTotal() as each group starts.
+      var compile_progress = Log.mute ? null : new Progress(0, 0);
+
       for(group in target.mFileGroups)
       {
          var useCache = CompileCache.hasCache && group.mUseCache;
@@ -586,7 +614,8 @@ class BuildTool
 
          var nvcc = group.mNvcc;
          var first = true;
-         var groupHeader = (!Log.quiet && !Log.verbose) ? function()
+         // shown in verbose too now that it is a single compact line
+         var groupHeader = (!Log.quiet) ? function()
          {
             if (first)
             {
@@ -595,36 +624,10 @@ class BuildTool
                {
                   first = false;
                   Log.lock();
-                  Log.println("");
-                  Log.info("\x1b[33;1mCompiling group: " + group.mId + "\x1b[0m");
-                  var message = "\x1b[1m" + (nvcc ? getNvcc() : mCompiler.mExe) + "\x1b[0m";
-                  var flags = group.mCompilerFlags;
-                  if (!nvcc)
-                     flags = flags.concat(mCompiler.getFlagStrings());
-                  else
-                     flags = flags.concat( BuildTool.getNvccFlags() );
-
-                  for (compilerFlag in flags)
-                  {
-                     if (StringTools.startsWith(compilerFlag, "-D"))
-                     {
-                        var index = compilerFlag.indexOf("(");
-                        if (index > -1)
-                        {
-                           message += " \x1b[1m" + compilerFlag.substr(0, index) + "\x1b[0m\x1b[2m" + compilerFlag.substr(index) + "\x1b[0m";
-                        }
-                        else
-                        {
-                           message += " \x1b[1m" + compilerFlag + "\x1b[0m";
-                        }
-                     }
-                     else
-                     {
-                        message += " \x1b[0m" + compilerFlag + "\x1b[0m";
-                     }
-                  }
-                  message += " \x1b[2m...\x1b[0m \x1b[2mtags=" + group.mTags.split(",") + "\x1b[0m";
-                  Log.info(message);
+                  // Compact group header, full compiler command line only under -vv
+                  var count = to_be_compiled.length;
+                  Log.info(Log.mark() + " " + Log.YELLOW + prettyGroupName(group.mId) + Log.NORMAL
+                     + Log.DIM + "  " + count + " file" + (count==1 ? "" : "s") + Log.NORMAL);
                   Log.unlock();
                }
                groupMutex.release();
@@ -632,10 +635,15 @@ class BuildTool
          } : null;
 
          Profile.push("compile");
+
+         // this group's share of the single bar is now known
+         if (compile_progress!=null)
+            compile_progress.addTotal(to_be_compiled.length);
+
          if (threadPool==null)
          {
             for(file in to_be_compiled)
-               mCompiler.compile(file,-1,groupHeader,pchStamp);
+               mCompiler.compile(file,-1,groupHeader,pchStamp,compile_progress);
          }
          else
          {
@@ -651,7 +659,7 @@ class BuildTool
                         break;
                      var file = to_be_compiled[index];
 
-                     compiler.compile(file,threadId,groupHeader,pchStamp);
+                     compiler.compile(file,threadId,groupHeader,pchStamp,compile_progress);
                   }
             });
          }
@@ -695,9 +703,17 @@ class BuildTool
             Sys.setCwd( baseDir );
       }
 
+      // every group is done - retire the single bar before linking prints
+      if (compile_progress!=null)
+         compile_progress.finish();
+
       switch(target.mTool)
       {
          case "linker":
+            // one blank line separating the group list from the final link step
+            // (the per-group static libs above stay flush with their headers)
+            if (!Log.quiet)
+               Log.println("");
             Profile.push("linker");
             if (mPrelinkers.exists(target.mToolID))
             {
@@ -1625,6 +1641,7 @@ class BuildTool
       if (defines.exists("HXCPP_NO_COLOUR") || defines.exists("HXCPP_NO_COLOR"))
          Log.colorSupported = false;
       Log.verbose = defines.exists("HXCPP_VERBOSE");
+      Log.showCommands = defines.exists("HXCPP_LOG_COMMANDS");
       Log.showSetup = defines.exists("HXCPP_LOG_SETUP");
       exitOnThreadError = defines.exists("HXCPP_EXIT_ON_ERROR");
 
@@ -1728,7 +1745,7 @@ class BuildTool
       }
 
 
-      isRPi = isLinux && Setup.isRaspberryPi();
+      isRPi = false;
 
       is64 = getArch()!="m32";
       var dirtyList = new Array<String>();
@@ -1775,6 +1792,12 @@ class BuildTool
          }
          else if (arg=="-v" || arg=="-verbose")
             Log.verbose = true;
+         else if (arg=="-vv" || arg=="-commands")
+         {
+            // -vv = verbose + echo every compiler/linker command line
+            Log.verbose = true;
+            Log.showCommands = true;
+         }
          else if (arg=="-nocolor")
             Log.colorSupported = false;
          else if (arg.substr(0,2)=="-I")
@@ -1793,6 +1816,7 @@ class BuildTool
       if (defines.exists("HXCPP_NO_COLOUR") || defines.exists("HXCPP_NO_COLOR"))
          Log.colorSupported = false;
       Log.verbose = Log.verbose || defines.exists("HXCPP_VERBOSE");
+      Log.showCommands = Log.showCommands || defines.exists("HXCPP_LOG_COMMANDS");
       Log.quiet = defines.exists("HXCPP_QUIET") && !Log.verbose;
       Log.mute = defines.exists("HXCPP_SILENT") && !Log.quiet && !Log.verbose;
 
@@ -1903,6 +1927,24 @@ class BuildTool
             Log.v('${BOLD}${YELLOW}No specified toolchain${NORMAL}');
          if (Log.verbose) Log.println("");
 
+         // Enable the compiler object-file cache by default for much faster
+         // (re)builds: unchanged sources are reused across builds, and on MSVC
+         // this also switches debug info to -Z7, removing the shared-PDB
+         // (mspdbsrv) serialization bottleneck during parallel compiles.
+         // Override the location with HXCPP_COMPILE_CACHE, or turn it off with
+         // HXCPP_COMPILE_CACHE=none.
+         if (!defines.exists("HXCPP_COMPILE_CACHE"))
+         {
+            var cacheHome = env.exists("HOME") ? env.get("HOME") :
+                            env.exists("USERPROFILE") ? env.get("USERPROFILE") : null;
+            if (cacheHome != null)
+               defines.set("HXCPP_COMPILE_CACHE", cacheHome + "/.hxcpp_cache");
+         }
+         if (defines.get("HXCPP_COMPILE_CACHE")=="none")
+            defines.remove("HXCPP_COMPILE_CACHE");
+         // Cap the cache so it self-trims instead of growing without bound.
+         if (!defines.exists("HXCPP_CACHE_MB"))
+            defines.set("HXCPP_CACHE_MB", "4000");
 
          if (targets.length==0)
             targets.push("default");
@@ -2145,21 +2187,21 @@ class BuildTool
             defines.set("toolchain","linux");
             defines.set("linux","linux");
 
-            if (defines.exists("HXCPP_LINUX_ARMV7"))
+            if (armv7)
             {
                defines.set("noM32","1");
                defines.set("noM64","1");
                defines.set("HXCPP_ARMV7","1");
                m64 = false;
             }
-            else if (arm64 || defines.exists("HXCPP_LINUX_ARM64"))
+            else if (arm64)
             {
                defines.set("noM32","1");
                defines.set("noM64","1");
                defines.set("HXCPP_ARM64","1");
                m64 = true;
             }
-            defines.set("BINDIR", arm64 ? "LinuxArm64" : m64 ? "Linux64":"Linux");
+            defines.set("BINDIR", arm64 ? "LinuxArm64" : armv7 ? "LinuxArm" : m64 ? "Linux64" : "Linux");
          }
       }
       else if ( (new EReg("mac","i")).match(os) )

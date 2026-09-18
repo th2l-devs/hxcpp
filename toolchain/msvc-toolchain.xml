@@ -49,6 +49,10 @@
 <set name="MSVC_ARCH" value="SSE2" unless="HXCPP_M64" />
 
 <set name="HXCPP_LTCG_INCREMENTAL" value="1" if="HXCPP_OPTIMIZE_LINK_INCREMENTAL"/>
+<!-- Faster debug linking: prefer -debug:fastlink (per-obj partial PDB) over a
+     full merged PDB on debug builds. Big link-time win during dev iteration.
+     Opt out with HXCPP_NO_FAST_LINK. Auto-disabled on pre-VS2015 just below. -->
+<set name="HXCPP_FAST_LINK" value="1" if="HXCPP_DEBUG_LINK" unless="HXCPP_FAST_LINK || HXCPP_NO_FAST_LINK || HXCPP_OPTIMIZE_LINK || HXCPP_LTCG_INCREMENTAL"/>
 <unset name="HXCPP_FAST_LINK" if="HXCPP_FAST_LINK" unless="MSVC19"/>
 
 <compiler id="MSVC" exe="cl.exe" if="windows">

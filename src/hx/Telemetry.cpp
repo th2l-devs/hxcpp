@@ -17,7 +17,7 @@ namespace hx
 
 inline unsigned int __hxt_ptr_id(void* obj)
 {
-#if defined(HXCPP_M64)
+#if (defined(HXCPP_M64) || defined(HXCPP_ARM64))
    size_t h64 = (size_t)obj;
    // Note, using >> 1 since Strings can be small, down to 2 bytes, causing collisions
    return (unsigned int)(h64>>1) ^ (unsigned int)(h64>>32);

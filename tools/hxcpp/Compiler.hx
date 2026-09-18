@@ -1,6 +1,13 @@
 import haxe.crypto.Md5;
 import haxe.io.Path;
 import sys.FileSystem;
+#if haxe4
+import sys.thread.Mutex;
+#elseif cpp
+import cpp.vm.Mutex;
+#else
+import neko.vm.Mutex;
+#end
 using StringTools;
 
 private class FlagInfo
@@ -358,7 +365,7 @@ class Compiler
       catch(e:Dynamic) { }
    }
 
-   public function compile(inFile:File,inTid:Int,headerFunc:Void->Void,pchTimeStamp:Null<Float>)
+   public function compile(inFile:File,inTid:Int,headerFunc:Void->Void,pchTimeStamp:Null<Float>,inProgess:Null<Progress>)
    {
       var obj_name = getObjName(inFile);
       var args = getArgs(inFile);
@@ -369,6 +376,13 @@ class Compiler
       var isRc =  mRcExe!=null && inFile.isResource();
       if (isRc)
          exe = mRcExe;
+
+      // Announce the group before the cache check, not after it. Otherwise a group
+      // that opens with a long run of compile-cache hits prints its header only when
+      // the first real compile lands (a fifth of the way in), and a fully cached
+      // group never prints one at all. headerFunc is idempotent (first-flag + mutex).
+      if (headerFunc!=null)
+         headerFunc();
 
       var found = false;
       var cacheName:String = null;
@@ -405,9 +419,6 @@ class Compiler
 
       if (!found)
       {
-         if (headerFunc!=null)
-            headerFunc();
-
          var tmpFile:String = null;
          var delayedFilename:String = null;
 
@@ -439,29 +450,27 @@ class Compiler
          if (delayedFilename!=null)
            args.push(delayedFilename);
 
-         var tagInfo = inFile.mTags==null ? "" : " " + inFile.mTags.split(",");
-
-         var fileName = inFile.mName;
-         var split = fileName.split ("/");
-         if (split.length > 1)
+         // compact live view: a progress bar plus the previous/current file, instead
+         // of one scrolling line per compile. In verbose we additionally keep a
+         // scrolling record of each file actually compiled - its full path and tags,
+         // rather than the entire compiler command line (see -vv for that).
+         if (inProgess != null)
          {
-            fileName = " \x1b[2m-\x1b[0m \x1b[33m" + split.slice(0, split.length - 1).join("/") + "/\x1b[33;1m" + split[split.length - 1] + "\x1b[0m";
+            Log.lock();
+            if ((inTid >= 0 && BuildTool.threadExitCode == 0) || inTid < 0)
+            {
+               if (Log.verbose)
+                  Log.info("   " + Log.DIM + inFile.mName
+                     + (inFile.mTags==null ? "" : "  " + inFile.mTags) + Log.NORMAL);
+               inProgess.step(inFile.mName, inFile.mTags);
+            }
+            Log.unlock();
          }
-         else
-         {
-            fileName = " \x1b[2m-\x1b[0m \x1b[33;1m" + fileName + "\x1b[0m";
-         }
-         fileName += " \x1b[3m" + tagInfo + "\x1b[0m";
-
 
          if (inTid >= 0)
          {
             if (BuildTool.threadExitCode == 0)
             {
-               if (!Log.verbose)
-               {
-                  Log.info(fileName);
-               }
                var err = ProcessManager.runProcessThreaded(exe, args, null);
                cleanTmp(tmpFile);
                if (err!=0)
@@ -474,10 +483,6 @@ class Compiler
          }
          else
          {
-            if (!Log.verbose)
-            {
-               Log.info(fileName);
-            }
             var result = ProcessManager.runProcessThreaded(exe, args, null);
             cleanTmp(tmpFile);
             if (result!=0)
@@ -494,6 +499,13 @@ class Compiler
             Log.info("", " caching " + cacheName);
             sys.io.File.copy(obj_name, cacheName);
          }
+      }
+      else if (inProgess != null)
+      {
+         // served from the compile cache: still one of `total`, so keep the bar honest
+         Log.lock();
+         inProgess.skip(inFile.mName);
+         Log.unlock();
       }
 
       return obj_name;

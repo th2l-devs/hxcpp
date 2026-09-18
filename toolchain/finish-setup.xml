@@ -100,7 +100,6 @@
 
    <set name="LIBEXTRA" value="-19" if="MSVC19" />
    <set name="LIBEXTRA" value="-arm64" if="HXCPP_ARM64" />
-   <set name="HXCPP_M64" value="1" if="HXCPP_ARM64" />
    <set name="HX_LINK_SUFFIX" value="-19" if="MSVC19" />
    <set name="HX_TARGET_SUFFIX" value="-19" if="MSVC19 static_link" />
 

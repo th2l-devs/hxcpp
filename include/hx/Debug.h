@@ -19,7 +19,7 @@ template<typename T> struct StackVariableWrapper
 };
 template<> struct StackVariableWrapper<size_t>
 {
-   #ifdef HXCPP_M64
+   #if (defined(HXCPP_M64) || defined(HXCPP_ARM64))
    typedef cpp::Int64 wrapper;
    #else
    typedef int wrapper;
