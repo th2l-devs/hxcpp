@@ -8,7 +8,7 @@
 #include <io.h>
 #elif defined(__unix__) || defined(__APPLE__)
 #include <sys/time.h>
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
 typedef int64_t __int64;
 #endif
 #endif
@@ -30,12 +30,7 @@ typedef int64_t __int64;
 #include <stdio.h>
 #include <time.h>
 #include <clocale>
-
-
-#ifdef HX_ANDROID
-#define rand() lrand48()
-#define srand(x) srand48(x)
-#endif
+#include <mutex>
 
 #ifdef HX_WINRT
 #define PRINTF WINRT_PRINTF
@@ -242,40 +237,33 @@ int __hxcpp_irand(int inMax)
    return (lo | (mid<<12) | (hi<<24) ) % inMax;
 }
 
+#ifdef HX_WINDOWS
+LARGE_INTEGER qpcFrequency;
+#endif
+
 void __hxcpp_stdlibs_boot()
 {
+#ifdef HX_WINDOWS
+    // MSDN states that QueryPerformanceFrequency will always succeed on XP and above, so I'm ignoring the result.
+    QueryPerformanceFrequency(&qpcFrequency);
+#endif
+
    #if defined(_MSC_VER) && !defined(HX_WINRT)
-   HMODULE kernel32 = LoadLibraryA("kernel32");
-   if (kernel32)
-   {
-      typedef BOOL (WINAPI *AttachConsoleFunc)(DWORD);
-      typedef HWND (WINAPI *GetConsoleWindowFunc)(void);
-      AttachConsoleFunc attach = (AttachConsoleFunc)GetProcAddress(kernel32,"AttachConsole");
-      GetConsoleWindowFunc getConsole = (GetConsoleWindowFunc)GetProcAddress(kernel32,"GetConsoleWindow");
-      if (attach && getConsole)
-      {
-         if (!attach( /*ATTACH_PARENT_PROCESS*/ (DWORD)-1 ))
-         {
-            //printf("Could not attach to parent console : %d\n",GetLastError());
-         }
-         else if (getConsole())
-         {
-            if (_fileno(stdout) < 0 || _get_osfhandle(fileno(stdout)) < 0)
-               freopen("CONOUT$", "w", stdout);
-            if (_fileno(stderr) < 0 || _get_osfhandle(fileno(stderr)) < 0)
-               freopen("CONOUT$", "w", stderr);
-            if (_fileno(stdin) < 0 || _get_osfhandle(fileno(stdin)) < 0)
-               freopen("CONIN$", "r", stdin);
-         }
-      }
+   if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+
+   } else if (GetConsoleWindow()) {
+      if (_fileno(stdout) < 0 || _get_osfhandle(fileno(stdout)) < 0)
+         freopen("CONOUT$", "w", stdout);
+      if (_fileno(stderr) < 0 || _get_osfhandle(fileno(stderr)) < 0)
+         freopen("CONOUT$", "w", stderr);
+      if (_fileno(stdin) < 0 || _get_osfhandle(fileno(stdin)) < 0)
+         freopen("CONIN$", "r", stdin);
    }
    //_setmode(_fileno(stdout), 0x00040000); // _O_U8TEXT
    //_setmode(_fileno(stderr), 0x00040000); // _O_U8TEXT
    //_setmode(_fileno(stdin), 0x00040000); // _O_U8TEXT
    #endif
 
-   // This is necessary for UTF-8 output to work correctly.
-   setlocale(LC_ALL, "");
    setlocale(LC_NUMERIC, "C");
 
    // I think this does more harm than good.
@@ -286,12 +274,72 @@ void __hxcpp_stdlibs_boot()
    setbuf(stderr, 0);
 }
 
+#ifdef HX_WINDOWS
+void WriteConsoleAllW(HANDLE h, const wchar_t *str, DWORD length) {
+   DWORD total_written = 0;
+   DWORD remaining = length;
+   while (total_written < length) {
+      DWORD written;
+      if (!WriteConsoleW(h, str + total_written, remaining, &written, NULL))
+      {
+         return;
+      }
+      if (written == remaining) {
+         return;
+      }
+      total_written += written;
+      remaining -= written;
+   }
+}
+
+void WriteConsoleAllA(HANDLE h, const char *str, DWORD length) {
+   DWORD total_written = 0;
+   DWORD remaining = length;
+   while (total_written < length) {
+      DWORD written;
+      if (!WriteConsoleA(h, str + total_written, remaining, &written, NULL))
+      {
+         return;
+      }
+      if (written == remaining) {
+         return;
+      }
+      total_written += written;
+      remaining -= written;
+   }
+}
+#endif
+
 void __trace(Dynamic inObj, Dynamic info)
 {
    String text;
    if (inObj != null())
       text = inObj->toString();
 
+#ifdef HX_WINDOWS
+   HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+   DWORD mode;
+   if (GetConsoleMode(handle, &mode))
+   {
+      fflush(stdout);
+      String s;
+      if (info == null()) {
+         s = String("?? ") + text + String("\n");
+      } else {
+         String filename = Dynamic((info)->__Field(HX_CSTRING("fileName"), HX_PROP_DYNAMIC))->toString();
+         int line = Dynamic((info)->__Field(HX_CSTRING("lineNumber"), HX_PROP_DYNAMIC))->__ToInt();
+         s = filename + String(":") + line + String(": ") + text + String("\n");
+      }
+      if (s.isUTF16Encoded())
+      {
+         WriteConsoleAllW(handle, s.__WCStr(), s.length);
+      } else {
+         // ascii
+         WriteConsoleAllA(handle, s.__CStr(), s.length);
+      }
+      return;
+   }
+#endif
 
    hx::strbuf convertBuf;
    if (info==null())
@@ -327,10 +375,7 @@ double  __time_stamp()
       if (t0==0)
       {
          t0 = now;
-         __int64 freq;
-         QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-         if (freq!=0)
-            period = 1.0/freq;
+         period = 1.0/qpcFrequency.QuadPart;
       }
       if (period!=0)
          return (now-t0)*period;
@@ -346,6 +391,26 @@ double  __time_stamp()
    return t-t0;
 #else
    return (double)clock() / ( (double)CLOCKS_PER_SEC);
+#endif
+}
+
+::cpp::Int64 __time_stamp_ms()
+{
+#ifdef HX_WINDOWS
+    // MSDN states that QueryPerformanceCounter will always succeed on XP and above, so I'm ignoring the result.
+    auto now = LARGE_INTEGER{ 0 };
+    QueryPerformanceCounter(&now);
+
+    return now.QuadPart * LONGLONG{ 1000 } / qpcFrequency.QuadPart;
+#else
+    auto time = timespec();
+
+    if (clock_gettime(CLOCK_MONOTONIC, &time))
+    {
+        throw ::Dynamic(HX_CSTRING("Failed to get the monotonic clock time"));
+    }
+
+    return time.tv_sec * 1000 + (time.tv_nsec / 1000000);
 #endif
 }
 
@@ -581,12 +646,34 @@ Array<String> __get_args()
 
 void __hxcpp_print_string(const String &inV)
 {
+#ifdef HX_WINDOWS
+   HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+   DWORD mode;
+   if (GetConsoleMode(handle, &mode) && inV.isUTF16Encoded())
+   {
+      fflush(stdout);
+      WriteConsoleAllW(handle, inV.__WCStr(), inV.length);
+      return;
+   }
+#endif
    hx::strbuf convertBuf;
    PRINTF("%s", inV.out_str(&convertBuf) );
 }
 
 void __hxcpp_println_string(const String &inV)
 {
+#ifdef HX_WINDOWS
+   HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+   DWORD mode;
+   if (GetConsoleMode(handle, &mode) && inV.isUTF16Encoded())
+   {
+      fflush(stdout);
+      WriteConsoleAllW(handle, inV.__WCStr(), inV.length);
+      fwrite("\n", 1, 1, stdout);
+      fflush(stdout);
+      return;
+   }
+#endif
    hx::strbuf convertBuf;
    PRINTF("%s\n", inV.out_str(&convertBuf));
    fflush(stdout);
@@ -611,7 +698,7 @@ bool __instanceof(const Dynamic &inValue, const Dynamic &inType)
 
 int __int__(double x)
 {
-   #ifndef EMSCRIPTEN
+   #ifndef __EMSCRIPTEN__
    if (x < -0x7fffffff || x>0x7fffffff )
    {
       __int64 big_int = (__int64)(x);
@@ -716,27 +803,40 @@ struct VarArgFunc : public hx::Object
      HX_OBJ_WB_NEW_MARKED_OBJECT(this)
    }
 
-   int __GetType() const { return vtFunction; }
-   ::String __ToString() const { return mRealFunc->__ToString() ; }
+#if (HXCPP_API_LEVEL>=500)
+   VarArgFunc(::hx::Callable<::Dynamic(::cpp::VirtualArray)>& inFunc) : mRealFunc(inFunc) {
+       HX_OBJ_WB_NEW_MARKED_OBJECT(this)
+   }
+#endif
 
-   void __Mark(hx::MarkContext *__inCtx) { HX_MARK_MEMBER(mRealFunc); }
+   int __GetType() const HXCPP_OVERRIDE { return vtFunction; }
+   ::String __ToString() const HXCPP_OVERRIDE { return mRealFunc->__ToString(); }
+
+   void __Mark(hx::MarkContext *__inCtx) HXCPP_OVERRIDE { HX_MARK_MEMBER(mRealFunc); }
 
    #ifdef HXCPP_VISIT_ALLOCS
-   void __Visit(hx::VisitContext *__inCtx) { HX_VISIT_MEMBER(mRealFunc); }
+   void __Visit(hx::VisitContext *__inCtx) HXCPP_OVERRIDE { HX_VISIT_MEMBER(mRealFunc); }
    #endif
 
-   void *__GetHandle() const { return mRealFunc.GetPtr(); }
-   Dynamic __Run(const Array<Dynamic> &inArgs)
+   void *__GetHandle() const HXCPP_OVERRIDE { return mRealFunc.GetPtr(); }
+   Dynamic __Run(const Array<Dynamic> &inArgs) HXCPP_OVERRIDE
    {
-      return mRealFunc->__run(inArgs);
+#if (HXCPP_API_LEVEL>=500)
+       return hx::invoker::invoke(mRealFunc.mPtr, inArgs);
+#else
+       return mRealFunc->__run(inArgs);
+#endif
    }
 
    Dynamic mRealFunc;
 };
 
 }
-
+#if (HXCPP_API_LEVEL>=500)
+Dynamic __hxcpp_create_var_args(::hx::Callable<::Dynamic(::cpp::VirtualArray)>& inArrayFunc)
+#else
 Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc)
+#endif
 {
    return Dynamic(new hx::VarArgFunc(inArrayFunc));
 }
@@ -748,7 +848,7 @@ Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc)
 
 
 
-static HxMutex sgFieldMapMutex;
+static std::mutex sgFieldMapMutex;
 
 typedef std::map<std::string,int> StringToField;
 
@@ -772,7 +872,7 @@ const String &__hxcpp_field_from_id( int f )
 
 int  __hxcpp_field_to_id( const char *inFieldName )
 {
-   AutoLock lock(sgFieldMapMutex);
+   std::lock_guard<std::mutex> lock(sgFieldMapMutex);
 
    if (!sgFieldToStringAlloc)
    {
@@ -801,7 +901,7 @@ int  __hxcpp_field_to_id( const char *inFieldName )
       sgFieldToStringAlloc *= 2;
       String *newData = (String *)malloc(sgFieldToStringAlloc*sizeof(String));
       if (oldAlloc)
-         memcpy(newData, oldData, oldAlloc*sizeof(String));
+         memcpy((void *)newData, oldData, oldAlloc*sizeof(String));
       // Let oldData dangle to keep it thread safe, rather than require mutex on id read.
       sgFieldToString = newData;
    }

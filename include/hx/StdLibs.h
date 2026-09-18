@@ -43,6 +43,7 @@ Array<unsigned char> __hxcpp_resource_bytes(String inName);
 // System access
 Array<String>  __get_args();
 double         __time_stamp();
+::cpp::Int64   __time_stamp_ms();
 
 HXCPP_EXTERN_CLASS_ATTRIBUTES void __hxcpp_print_string(const String &inV);
 HXCPP_EXTERN_CLASS_ATTRIBUTES void __hxcpp_println_string(const String &inV);
@@ -89,7 +90,11 @@ HXCPP_EXTERN_CLASS_ATTRIBUTES Dynamic __hxcpp_parse_int(const String &inString);
 HXCPP_EXTERN_CLASS_ATTRIBUTES double __hxcpp_parse_float(const String &inString);
 HXCPP_EXTERN_CLASS_ATTRIBUTES double __hxcpp_parse_substr_float(const String &inString, int start, int len);
 HXCPP_EXTERN_CLASS_ATTRIBUTES int __hxcpp_parse_substr_int(const String &inString, int start=0, int len=-1);
+#if (HXCPP_API_LEVEL>=500)
+HXCPP_EXTERN_CLASS_ATTRIBUTES Dynamic __hxcpp_create_var_args(::hx::Callable<::Dynamic(::cpp::VirtualArray)>& inArrayFunc);
+#else
 HXCPP_EXTERN_CLASS_ATTRIBUTES Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc);
+#endif
 HXCPP_EXTERN_CLASS_ATTRIBUTES void __hxcpp_set_float_format(String inFormat);
 
 inline int _hx_idiv(int inNum,int inDenom) { return inNum/inDenom; }
@@ -149,14 +154,15 @@ HXCPP_EXTERN_CLASS_ATTRIBUTES String __hxcpp_char_bytes_to_utf8_string(String &i
 HXCPP_EXTERN_CLASS_ATTRIBUTES String __hxcpp_utf8_string_to_char_bytes(String &inUTF8);
 
 
+
 #ifdef HXCPP_GC_GENERATIONAL
    #define HX_MAP_THIS this, h
    #define HX_MAP_THIS_ this,
-   #define HX_MAP_THIS_ARG hx::Object *owner, Dynamic &ioHash
+   #define HX_MAP_THIS_ARG ::hx::Object *owner, ::Dynamic &ioHash
 #else
    #define HX_MAP_THIS h
-   #define HX_MAP_THIS_ 
-   #define HX_MAP_THIS_ARG Dynamic &ioHash
+   #define HX_MAP_THIS_
+   #define HX_MAP_THIS_ARG ::Dynamic &ioHash
 #endif
 
 // --- HashRoot ---------------------------------------------------------------------
@@ -293,11 +299,14 @@ double __hxcpp_time_stamp();
 
 // --- vm/threading --------------------------------------------------------------------
 
+#if (HXCPP_API_LEVEL<500)
+
 Dynamic __hxcpp_thread_create(Dynamic inFunc);
+
 Dynamic __hxcpp_thread_current();
 void    __hxcpp_thread_send(Dynamic inThread, Dynamic inMessage);
 Dynamic __hxcpp_thread_read_message(bool inBlocked);
-bool __hxcpp_is_current_thread(hx::Object *inThread);
+bool __hxcpp_is_current_thread(hx::Object* inThread);
 
 Dynamic __hxcpp_mutex_create();
 void    __hxcpp_mutex_acquire(Dynamic);
@@ -314,21 +323,23 @@ void __hxcpp_condition_acquire(Dynamic);
 bool __hxcpp_condition_try_acquire(Dynamic);
 void __hxcpp_condition_release(Dynamic);
 void __hxcpp_condition_wait(Dynamic);
-bool __hxcpp_condition_timed_wait(Dynamic,double);
+bool __hxcpp_condition_timed_wait(Dynamic, double);
 void __hxcpp_condition_signal(Dynamic);
 void __hxcpp_condition_broadcast(Dynamic);
 
 Dynamic __hxcpp_lock_create();
-bool    __hxcpp_lock_wait(Dynamic inlock,double inTime);
+bool    __hxcpp_lock_wait(Dynamic inlock, double inTime);
 void    __hxcpp_lock_release(Dynamic inlock);
 
 Dynamic __hxcpp_deque_create();
-void    __hxcpp_deque_add(Dynamic q,Dynamic inVal);
-void    __hxcpp_deque_push(Dynamic q,Dynamic inVal);
-Dynamic __hxcpp_deque_pop(Dynamic q,bool block);
+void    __hxcpp_deque_add(Dynamic q, Dynamic inVal);
+void    __hxcpp_deque_push(Dynamic q, Dynamic inVal);
+Dynamic __hxcpp_deque_pop(Dynamic q, bool block);
 
 Dynamic __hxcpp_tls_get(int inID);
-void    __hxcpp_tls_set(int inID,Dynamic inVal);
+void    __hxcpp_tls_set(int inID, Dynamic inVal);
+
+#endif
 
 bool _hx_atomic_exchange_if(::cpp::Pointer<cpp::AtomicInt> inPtr, int test, int newVal  );
 int _hx_atomic_inc(::cpp::Pointer<cpp::AtomicInt> inPtr );
@@ -472,14 +483,100 @@ inline void* _hx_atomic_compare_exchange_ptr(volatile void **a, void *expected, 
 #elif defined(HX_MSVC_ATOMICS)
   return _InterlockedCompareExchangePointer((void *volatile *)a, replacement, expected);
 #else
-   void *old = *a;
-   *a = replacement;
-   return old;
+  void *old = *a;
+  if (old == expected) {
+    *a = replacement;
+  }
+  return old;
 #endif
 }
 
 inline void* _hx_atomic_compare_exchange_cast_ptr(void *a, void *expected, void *replacement) {
    return _hx_atomic_compare_exchange_ptr((volatile void **)a, expected, replacement);
+}
+
+#include <atomic>
+
+struct AtomicObject: hx::Object {
+  std::atomic< ::hx::Object *> aPtr;
+
+  AtomicObject(Dynamic val) { aPtr = val.mPtr; }
+
+  void __Mark(hx::MarkContext *__inCtx) HXCPP_OVERRIDE {
+    Dynamic ptr = load();
+    HX_MARK_MEMBER(ptr);
+  }
+
+#ifdef HXCPP_VISIT_ALLOCS
+   void __Visit(hx::VisitContext *__inCtx) HXCPP_OVERRIDE {
+     hx::Object *obj = aPtr.load();
+     HX_VISIT_MEMBER(obj);
+     aPtr.store(obj);
+   }
+#endif
+
+   Dynamic store(Dynamic val) {
+     aPtr.store(val.mPtr);
+     HX_OBJ_WB_GET(this, val.mPtr);
+     return val;
+   }
+
+   Dynamic load() {
+     return aPtr.load();
+   }
+
+   Dynamic exchange(Dynamic val) {
+      Dynamic ret = aPtr.exchange(val.mPtr);
+      HX_OBJ_WB_GET(this, val.mPtr);
+      return ret;
+   }
+
+   Dynamic compareExchange(Dynamic expected, Dynamic replacement) {
+     // Note: using Dynamic instead of hx::Object* is important
+     // Dynamic has an overloaded == operator, a raw pointer to hx::Object does not.
+     Dynamic original = aPtr.load();
+     while (original == expected) {
+       if (aPtr.compare_exchange_weak(original.mPtr, replacement.mPtr)) {
+         HX_OBJ_WB_GET(this, replacement.mPtr);
+         return original;
+       } else {
+         continue;
+       }
+     }
+     return original;
+   }
+};
+
+inline Dynamic __hxcpp_atomic_object_create(Dynamic value) {
+   return new AtomicObject(value);
+}
+
+inline Dynamic __hxcpp_atomic_object_store(Dynamic dynObj, Dynamic val) {
+  AtomicObject *obj = dynamic_cast<AtomicObject *>(dynObj.mPtr);
+  if (!obj)
+    throw HX_INVALID_OBJECT;
+   return obj->store(val);
+}
+
+inline Dynamic __hxcpp_atomic_object_load(Dynamic dynObj) {
+  AtomicObject *obj = dynamic_cast<AtomicObject *>(dynObj.mPtr);
+  if (!obj)
+    throw HX_INVALID_OBJECT;
+   return obj->load();
+}
+
+inline Dynamic __hxcpp_atomic_object_exchange(Dynamic dynObj, Dynamic newVal) {
+  AtomicObject *obj = dynamic_cast<AtomicObject *>(dynObj.mPtr);
+  if (!obj)
+    throw HX_INVALID_OBJECT;
+   return obj->exchange(newVal);
+}
+
+inline Dynamic __hxcpp_atomic_object_compare_exchange(Dynamic dynObj, Dynamic expected, Dynamic replacement) {
+  AtomicObject *obj = dynamic_cast<AtomicObject *>(dynObj.mPtr);
+  if (!obj)
+    throw HX_INVALID_OBJECT;
+  return obj->compareExchange(expected, replacement);
 }
 
 Array<String> __hxcpp_get_call_stack(bool inSkipLast);
@@ -903,7 +1000,11 @@ void _hx_ssl_conf_close( Dynamic hconf );
 void _hx_ssl_conf_set_ca( Dynamic hconf, Dynamic hcert );
 void _hx_ssl_conf_set_verify( Dynamic hconf, int mode );
 void _hx_ssl_conf_set_cert( Dynamic hconf, Dynamic hcert, Dynamic hpkey );
+#if (HXCPP_API_LEVEL>=500)
+void _hx_ssl_conf_set_servername_callback(Dynamic hconf, ::hx::Callable<::Dynamic(::String)> obj);
+#else
 void _hx_ssl_conf_set_servername_callback( Dynamic hconf, Dynamic obj );
+#endif
 Dynamic _hx_ssl_cert_load_defaults();
 Dynamic _hx_ssl_cert_load_file( String file );
 Dynamic _hx_ssl_cert_load_path( String path );

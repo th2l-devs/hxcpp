@@ -37,8 +37,10 @@ Defines affecting how the code is compiled.  These can be on the command line wh
 | *HXCPP_CHECK_POINTER*   | Add null-pointer checks,even in release mode. |
 | *HXCPP_PROFILER*        | Add profiler support |
 | *HXCPP_TELEMETRY*       | Add telemetry support |
-| *HXCPP_CPP11*           | Use c++11 features and link libraries |
-| *HXCPP_CPP17*           | Use c++17 features and link libraries |
+| *HXCPP_C_STANDARD*      | Set default C standard |
+| *HXCPP_CXX_STANDARD*    | Set default C++ standard |
+| *HXCPP_OBJC_STANDARD*   | Set default Objective-C standard |
+| *HXCPP_OBJCXX_STANDARD* | Set default Objective-C++ standard |
 | *exe_link*              | Generate executable file (rather than dynamic library on android) |
 | *static_link*           | Generate static library |
 | *dll_link*              | Generate dynamic library |
@@ -64,6 +66,8 @@ Defines affecting target architecture.
 | *HXCPP_ARM64*           | Compile arm-based devices for 64 bits |
 | *HXCPP_ARMV7*           | Compile arm-based devices for armv7 |
 | *HXCPP_ARMV7S*          | Compile arm-based devices for armv7s |
+| *HXCPP_LINUX_ARMV7*     | Run on a linux ARMv7 device |
+| *HXCPP_LINUX_ARM64*     | Run on a linux ARM64 device |
 | *winrt*                 | Compile for windowsRt/windows UWP |
 | *android*               | Compile for android |
 | *HXCPP_ANDROID_PLATFORM* | Specify the android platform for NDK compilation |

@@ -28,5 +28,3 @@ cd $REPO
 ```
 
 Then you can do `haxelib run hxcpp file.cppia`.
-
-*In case this repository doesn't work or it is lost, you can use hxcpp 4.3.2*

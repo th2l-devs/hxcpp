@@ -1,13 +1,14 @@
 <xml>
 
 <!-- make sure hxcpp.n is up to date -->
-<pleaseUpdateHxcppTool version="7" />
+<pleaseUpdateHxcppTool version="8" />
 
 <pragma once="true" />
 
 
 <!-- Use value from Build.xml file unless one is specified from the haxe defines -->
 <set name="hxcpp_api_level" value="${HXCPP_API_LEVEL}" unless="hxcpp_api_level" if="HXCPP_API_LEVEL"  />
+<set name="HXCPP_THREAD_XML" value="${HXCPP}/toolchain/haxe-target-threads.xml" unless="HXCPP_THREAD_XML"/>
 
 <!-- You can override the exes an "exe" section on your own .hxcpp_config -->
 <!-- You can use replace="1" to change the compiler, or omit to add flags -->
@@ -53,21 +54,40 @@
   <depend name="${HXCPP}/include/hx/OS.h"/>
   <depend name="${HXCPP}/include/hx/ObjcHelpers.h"/>
   <depend name="${HXCPP}/include/hx/HeaderVersion.h"/>
-  <depend name="${HXCPP}/include/hx/Unordered.h"/>
   <depend name="${HXCPP}/include/hx/LessThanEq.h"/>
   <depend name="${HXCPP}/include/hx/Interface.h"/>
   <depend name="${HXCPP}/include/cpp/Pointer.h"/>
   <depend name="${HXCPP}/include/cpp/Int64.h"/>
   <depend name="${HXCPP}/include/cpp/Variant.h"/>
   <depend name="${HXCPP}/include/cpp/VirtualArray.h"/>
+  <depend name="${HXCPP}/include/cpp/marshal/Definitions.inc"/>
+  <depend name="${HXCPP}/include/cpp/marshal/Boxed.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/PointerType.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/PointerReference.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/ValueType.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/ValueReference.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/View.hpp"/>
+  <depend name="${HXCPP}/include/cpp/marshal/Marshal.hpp"/>
+  <depend name="${HXCPP}/include/cpp/encoding/Ascii.hpp"/>
+  <depend name="${HXCPP}/include/cpp/encoding/Utf8.hpp"/>
+  <depend name="${HXCPP}/include/cpp/encoding/Utf16.hpp"/>
   <depend name="${HXCPP}/include/hx/Scriptable.h"/>
+  <depend name="${HXCPP}/include/hx/zip/Zip.hpp"/>
+  <depend name="${HXCPP}/include/hx/zip/Compress.hpp"/>
+  <depend name="${HXCPP}/include/hx/zip/Uncompress.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/RecursiveMutex.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/ConditionVariable.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/CountingSemaphore.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/Thread.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/ThreadLocal.hpp"/>
+  <depend name="${HXCPP}/include/hx/thread/Scratch.hpp"/>
   <section unless="HXCPP_LINK_NO_TOOL_DEPENDS" >
      <depend name="${HXCPP}/toolchain/haxe-target.xml" dateOnly="true" />
      <depend name="${HXCPP}/toolchain/${toolchain}-toolchain.xml" ifExists="${HXCPP}/toolchain/${toolchain}-toolchain.xml" dateOnly="true" />
      <depend name="${HXCPP}/hxcpp.n" ifExists="${HXCPP}/hxcpp.n"  dateOnly="true" />
   </section>
 </files>
- 
+
 
 
 <!-- Additional dependencies for haxe target -->
@@ -140,7 +160,7 @@
   <compilerflag value="-DTRACY_NO_EXIT" if="HXCPP_TRACY_NO_EXIT"/>
   <compilerflag value="-DTRACY_ON_DEMAND" if="HXCPP_TRACY_ON_DEMAND"/>
 
-  <file name="project/thirdparty/tracy-0.11.1/TracyClient.cpp"/>
+  <file name="project/thirdparty/tracy-0.13.1/TracyClient.cpp"/>
   <cache value="1" project="hxcpp-tracy" asLibrary="true" />
 </files>
 
@@ -150,7 +170,7 @@
   <depend name="${HXCPP}/src/hx/Hash.h"/>
   <depend name="${HXCPP}/src/hx/Unicase.h"/>
   <depend name="${HXCPP}/src/hx/gc/GcRegCapture.h"/>
-  <compilerflag value="-D_CRT_SECURE_NO_DEPRECATE"/>
+  <depend name="${HXCPP}/src/hx/thread/ThreadImpl.hpp"/>
 
   <compilerflag value="-DHX_UNDEFINE_H" />
 
@@ -174,7 +194,7 @@
     <file name = "src/hx/TelemetryTracy.cpp" if="HXCPP_TRACY"/>
     <file name = "src/hx/Telemetry.cpp" unless="HXCPP_TRACY"/>
   </section>
-  
+
   <file name = "src/hx/Profiler.cpp" if="HXCPP_PROFILER" />
   <file name = "src/hx/Thread.cpp"/>
   <file name = "src/hx/RunLibs.cpp" if="static_link||dll_link"/>
@@ -187,6 +207,10 @@
   <file name = "src/Enum.cpp"/>
   <file name = "src/Math.cpp"/>
   <file name = "src/String.cpp" tags="haxe,hxstring" />
+
+  <file name = "src/cpp/encoding/Encodings.cpp" />
+
+  <include name="${HXCPP_THREAD_XML}"/>
 
   <addTwice if="linux||android" />
   <cache value="1" project="hxcpp_runtime" asLibrary="true" />
@@ -257,5 +281,3 @@
 
 
 </xml>
-
-

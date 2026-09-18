@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <set>
 #include <string>
-#include <hx/Unordered.h>
 #include "hx/Hash.h"
 #include <hx/Thread.h>
 #include <locale>
@@ -143,6 +142,7 @@ static void UTF8EncodeAdvance(char * &ioPtr,int c)
       }
 }
 
+#ifndef HX_SMART_STRINGS
 static unsigned char *sUtf8LenArray = 0;
 
 static const unsigned char *getUtf8LenArray()
@@ -155,6 +155,7 @@ static const unsigned char *getUtf8LenArray()
    }
    return sUtf8LenArray;
 }
+#endif
 
 static inline int DecodeAdvanceUTF8(const unsigned char * &ioPtr)
 {
@@ -446,9 +447,6 @@ inline String TCopyString(const T *inString,int inLength)
       return String();
 
    #ifndef HX_SMART_STRINGS
-      if (inLength<0)
-         for(inLength=0; !inString[inLength]; inString++) { }
-
       if (sizeof(T)==1)
       {
          int len = 0;
@@ -457,7 +455,10 @@ inline String TCopyString(const T *inString,int inLength)
       }
       else
       {
-         int length = inLength;
+         if (inLength == 0) {
+            return String::emptyString;
+         }
+         int length = inLength > 0 ? inLength : 0;
          const char *ptr = TConvertToUTF8(inString, &length, 0, true );
          return String(ptr,length);
       }
@@ -788,10 +789,41 @@ String String::create(const char *inString,int inLength)
    return String(s,len);
 }
 
+String String::create(const::cpp::marshal::View<char>& buffer)
+{
+    auto start = buffer.ptr.ptr;
+    auto end   = start + buffer.length;
 
+    while (start < end) {
+        if (*start == false)
+        {
+            break;
+        }
 
+        start++;
+    }
 
+    return String::create(buffer.ptr.ptr, buffer.length - (end - start));
+}
 
+String String::create(const cpp::marshal::View<char16_t>& buffer)
+{
+    auto start = reinterpret_cast<const char16_t*>(buffer.ptr.ptr);
+    auto end   = start + buffer.length;
+    auto extra = 0;
+
+    while (start < end) {
+        if (Char16Advance(start) == false)
+        {
+            // set extra to 1 so we don't include the null terminating character in the calculated length.
+            extra = 1;
+
+            break;
+        }
+    }
+
+    return String::create(buffer.ptr.ptr, buffer.length - (end - start) - extra);
+}
 
 String::String(const Dynamic &inRHS)
 {
@@ -901,9 +933,10 @@ unsigned int String::calcSubHash(int start, int inLen) const
    if (isUTF16Encoded())
    {
       const char16_t *w = __w + start;
-      for(int i=0;i<inLen;i++)
+      const char16_t *end = w + inLen;
+      while (w < end)
       {
-         int c = w[i];
+         int c = Char16Advance(w, false);
          if( c <= 0x7F )
          {
             ADD_HASH(c);
@@ -946,9 +979,11 @@ unsigned int String::calcHash() const
    #ifdef HX_SMART_STRINGS
    if (isUTF16Encoded())
    {
-      for(int i=0;i<length;i++)
+      const char16_t *w = __w;
+      const char16_t *end = w + length;
+      while (w < end)
       {
-         int c = __w[i];
+         int c = Char16Advance(w, false);
          if( c <= 0x7F )
          {
             ADD_HASH(c);
@@ -1380,15 +1415,18 @@ Dynamic String::charCodeAt(int inPos) const
 
 String String::fromCharCode( int c )
 {
-   if (c<=255)
+   if (0<=c && c<=255)
    {
       return sConstStrings[c];
    }
    else
    {
       #ifdef HX_SMART_STRINGS
-      if (IsUtf16Surrogate(c)||c>=0x110000)
-         c = 0xFFFD;
+      // Leave Utf16 surrogate handling up to the application - as far as hxcpp is concerned
+      // they are single characters. ie, mirror charAt. 
+      // If the application does not group them as a pair, then it may not be possible to convert to utf8.
+      //if (IsUtf16Surrogate(c))
+      //   hx::Throw(HX_CSTRING("Invalid unpaired surrogate code"));
       #endif
 
       int group = c>>10;
@@ -1397,7 +1435,7 @@ String String::fromCharCode( int c )
       if (!sCharToString[group])
       {
          String *ptr = (String *)malloc( sizeof(String)*1024 );
-         memset(ptr, 0, sizeof(String)*1024 );
+         memset((void *)ptr, 0, sizeof(String)*1024 );
          sCharToString[group] = ptr;
       }
       String *ptr = sCharToString[group];
@@ -1522,7 +1560,7 @@ String _hx_utf8_to_utf16(const unsigned char *ptr, int inUtf8Len, bool addHash)
    }
    if (addHash)
    {
-      #ifdef EMSCRIPTEN
+      #ifdef __EMSCRIPTEN__
          *((emscripten_align1_int *)(str+char16Count+1) ) = hash;
       #else
          *((unsigned int *)(str+char16Count+1) ) = hash;
@@ -1546,7 +1584,7 @@ void __hxcpp_string_of_bytes(Array<unsigned char> &inBytes,String &outString,int
    else
    {
       const unsigned char *p0 = (const unsigned char *)inBytes->GetBase();
-      #ifdef HX_SMART_STRINGS
+#ifdef HX_SMART_STRINGS
       bool hasWChar = false;
       const unsigned char *p = p0 + pos;
       for(int i=0;i<len;i++)
@@ -1560,7 +1598,7 @@ void __hxcpp_string_of_bytes(Array<unsigned char> &inBytes,String &outString,int
          outString = _hx_utf8_to_utf16(p0+pos,len,true);
       }
       else
-      #endif
+#endif
       outString = String( GCStringDup((const char *)p0+pos, len, 0), len);
    }
 }
@@ -1761,6 +1799,127 @@ const char16_t * String::wc_str(hx::IStringAlloc *inBuffer, int *outCharLength) 
    return str;
 }
 
+bool String::wc_str(::cpp::marshal::View<char16_t> buffer, int* outCharLength) const
+{
+#ifdef HX_SMART_STRINGS
+    if (isUTF16Encoded())
+    {
+        if (buffer.length < length + 1)
+        {
+            return false;
+        }
+
+        if (nullptr != outCharLength)
+        {
+            *outCharLength = length + 1;
+        }
+
+        std::memcpy(buffer.ptr, __w, sizeof(char16_t) * length);
+
+        buffer[int64_t{ length }] = 0;
+
+        return true;
+    }
+#endif
+
+    auto charCount = 0;
+    auto source    = reinterpret_cast<const unsigned char*>(__s);
+    auto cursor    = source;
+    auto end       = source + length;
+
+    while (cursor < end)
+    {
+        auto code = DecodeAdvanceUTF8(cursor, end);
+
+        charCount += UTF16BytesCheck(code);
+    }
+
+    if (buffer.length < charCount + 1)
+    {
+        return false;
+    }
+
+    cursor = source;
+    auto output = buffer.ptr.ptr;
+
+    while (cursor < end)
+    {
+        auto code = DecodeAdvanceUTF8(cursor, end);
+
+        Char16AdvanceSet(output, code);
+    }
+
+    *output = 0;
+
+    if (nullptr != outCharLength)
+    {
+        *outCharLength = length + 1;
+    }
+
+    return true;
+}
+
+bool String::utf8_str(::cpp::marshal::View<char> buffer, int* outByteLength) const
+{
+#ifdef HX_SMART_STRINGS
+    if (isUTF16Encoded())
+    {
+        auto cursor = __w;
+
+        while (Char16Advance(cursor)) {}
+
+        auto calculated = cursor - __w - 1;
+
+        cursor = __w;
+
+        auto end   = cursor + calculated;
+        auto chars = 0;
+
+        while (cursor < end)
+        {
+            chars += UTF8Bytes(Char16Advance(cursor));
+        }
+
+        if (buffer.length < chars + 1)
+        {
+            return false;
+        }
+
+        auto output = buffer.ptr.ptr;
+        cursor = __w;
+
+        while (cursor < end)
+        {
+            UTF8EncodeAdvance(output, Char16Advance(cursor));
+        }
+
+        *output = 0;
+
+        if (nullptr != outByteLength)
+        {
+            *outByteLength = chars + 1;
+        }
+
+        return true;
+    }
+#endif
+
+    if (buffer.length < length)
+    {
+        return false;
+    }
+
+    if (nullptr != outByteLength)
+    {
+        *outByteLength = length + 1;
+    }
+
+    std::memcpy(buffer.ptr, __s, sizeof(char) * length);
+
+    buffer[int64_t{ length }] = 0;
+
+    return true;
+}
 
 const wchar_t * String::wchar_str(hx::IStringAlloc *inBuffer) const
 {
@@ -1962,10 +2121,7 @@ String String::substr(int inFirst, Dynamic inLen) const
    if (inFirst<0) inFirst = 0;
    if (len<0)
    {
-      len += length;
-      // This logic matches flash ....
-      if (inFirst + len >=length)
-         len = 0;
+      len = length + len - inFirst;
    }
 
    if (len<=0 || inFirst>=length)
@@ -2107,56 +2263,135 @@ String &String::operator+=(const String &inRHS)
    return *this;
 }
 
-#ifdef HXCPP_VISIT_ALLOCS
-#define STRING_VISIT_FUNC \
-    void __Visit(hx::VisitContext *__inCtx) { HX_VISIT_STRING(mThis.raw_ref()); }
+#if (HXCPP_API_LEVEL>=500)
+    #ifdef HXCPP_VISIT_ALLOCS
+        #define STRING_VISIT_FUNC \
+            void __Visit(hx::VisitContext *__inCtx) override { HX_VISIT_MEMBER(mThis); }
+    #else
+        #define STRING_VISIT_FUNC
+    #endif
+
+    #define HX_STRING_ARG_LIST0
+    #define HX_STRING_ARG_LIST1(arg0) arg0
+    #define HX_STRING_ARG_LIST2(arg0, arg1) arg0, arg1
+
+    #define HX_STRING_FUNC_LIST0
+    #define HX_STRING_FUNC_LIST1(arg0) arg0 inArg0
+    #define HX_STRING_FUNC_LIST2(arg0, arg1) arg0 inArg0, arg1 inArg1
+
+    #define HX_STRING_FUNC(value, name, args_list, func_list, args_call) \
+        ::hx::Callable<value(args_list)> String::name##_dyn() \
+        { \
+            struct _hx_string_##name final : public ::hx::AutoCallable_obj<value(args_list)> \
+            { \
+                ::String mThis; \
+                _hx_string_##name(const ::String& inThis) : mThis(inThis) \
+                { \
+                    HX_OBJ_WB_NEW_MARKED_OBJECT(this); \
+                } \
+                value HX_LOCAL_RUN(func_list) override \
+                { \
+                    return mThis.name(args_call); \
+                } \
+                void __SetThis(Dynamic inThis) override \
+                { \
+                    mThis = inThis; \
+                } \
+                void* __GetHandle() const override { return const_cast<char *>(mThis.raw_ptr()); } \
+                void __Mark(hx::MarkContext *__inCtx) override { HX_MARK_MEMBER(mThis); } \
+                STRING_VISIT_FUNC \
+                int __Compare(const ::hx::Object* inRhs) const override \
+                { \
+                    auto casted = dynamic_cast<const _hx_string_##name *>(inRhs); \
+                    if (!casted) return 1; \
+                    if (!hx::IsPointerEq(mThis, casted->mThis)) return -1; \
+                    return 0; \
+                } \
+            }; \
+            return new _hx_string_##name(*this); \
+        }
+
+    HX_STRING_FUNC(::String, charAt, HX_STRING_ARG_LIST1(int), HX_STRING_FUNC_LIST1(int), HX_ARG_LIST1);
+    HX_STRING_FUNC(::Dynamic, charCodeAt, HX_STRING_ARG_LIST1(int), HX_STRING_FUNC_LIST1(int), HX_ARG_LIST1);
+    HX_STRING_FUNC(int, indexOf, HX_STRING_ARG_LIST2(::String, ::Dynamic), HX_STRING_FUNC_LIST2(::String, ::Dynamic), HX_ARG_LIST2);
+    HX_STRING_FUNC(int, lastIndexOf, HX_STRING_ARG_LIST2(::String, ::Dynamic), HX_STRING_FUNC_LIST2(::String, ::Dynamic), HX_ARG_LIST2);
+    HX_STRING_FUNC(::Array<::String>, split, HX_STRING_ARG_LIST1(::String), HX_STRING_FUNC_LIST1(::String), HX_ARG_LIST1);
+    HX_STRING_FUNC(::String, substr, HX_STRING_ARG_LIST2(int, ::Dynamic), HX_STRING_FUNC_LIST2(int, ::Dynamic), HX_ARG_LIST2);
+    HX_STRING_FUNC(::String, substring, HX_STRING_ARG_LIST2(int, ::Dynamic), HX_STRING_FUNC_LIST2(int, ::Dynamic), HX_ARG_LIST2);
+    HX_STRING_FUNC(::String, toLowerCase, HX_STRING_ARG_LIST0, HX_STRING_FUNC_LIST0, HX_ARG_LIST0);
+    HX_STRING_FUNC(::String, toString, HX_STRING_ARG_LIST0, HX_STRING_FUNC_LIST0, HX_ARG_LIST0);
+    HX_STRING_FUNC(::String, toUpperCase, HX_STRING_ARG_LIST0, HX_STRING_FUNC_LIST0, HX_ARG_LIST0);
+
+    ::hx::Callable<::String(int)> String::fromCharCode_dyn()
+    {
+        struct _hx_string_fromCharCode : public ::hx::AutoCallable_obj<::String(HX_STRING_ARG_LIST1(int))>
+        {
+            ::String HX_LOCAL_RUN(HX_STRING_FUNC_LIST1(int)) override
+            {
+                return ::String::fromCharCode(HX_ARG_LIST1);
+            }
+            int __Compare(const ::hx::Object* inRhs) const override
+            {
+                return dynamic_cast<const _hx_string_fromCharCode*>(inRhs) ? 0 : -1;
+            }
+        };
+
+        return new _hx_string_fromCharCode();
+    }
 #else
-#define STRING_VISIT_FUNC
+    #ifdef HXCPP_VISIT_ALLOCS
+    #define STRING_VISIT_FUNC \
+        void __Visit(hx::VisitContext *__inCtx) HXCPP_OVERRIDE { HX_VISIT_STRING(mThis.raw_ref()); }
+    #else
+    #define STRING_VISIT_FUNC
+    #endif
+
+    #define DEFINE_STRING_FUNC(func,array_list,dynamic_arg_list,arg_list,ARG_C) \
+    struct __String_##func : public hx::Object \
+    { \
+       bool __IsFunction() const { return true; } \
+       HX_IS_INSTANCE_OF enum { _hx_ClassId = hx::clsIdClosure }; \
+       String mThis; \
+       __String_##func(const String &inThis) : mThis(inThis) { \
+          HX_OBJ_WB_NEW_MARKED_OBJECT(this); \
+       } \
+       String toString() HXCPP_OVERRIDE { return HX_CSTRING(#func); } \
+       String __ToString() const HXCPP_OVERRIDE { return HX_CSTRING(#func); } \
+       int __GetType() const HXCPP_OVERRIDE { return vtFunction; } \
+       void *__GetHandle() const HXCPP_OVERRIDE { return const_cast<char *>(mThis.raw_ptr()); } \
+       int __ArgCount() const HXCPP_OVERRIDE { return ARG_C; } \
+       void __Mark(hx::MarkContext *__inCtx) HXCPP_OVERRIDE { HX_MARK_STRING(mThis.raw_ptr()); } \
+       Dynamic __Run(const Array<Dynamic> &inArgs) HXCPP_OVERRIDE \
+       { \
+          return mThis.func(array_list); return Dynamic(); \
+       } \
+       Dynamic __run(dynamic_arg_list) HXCPP_OVERRIDE \
+       { \
+          return mThis.func(arg_list); return Dynamic(); \
+       } \
+       STRING_VISIT_FUNC \
+       void  __SetThis(Dynamic inThis) HXCPP_OVERRIDE { mThis = inThis; } \
+    }; \
+    Dynamic String::func##_dyn()  { return new __String_##func(*this);  }
+
+
+    #define DEFINE_STRING_FUNC0(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST0,HX_DYNAMIC_ARG_LIST0,HX_ARG_LIST0,0)
+    #define DEFINE_STRING_FUNC1(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST1,HX_DYNAMIC_ARG_LIST1,HX_ARG_LIST1,1)
+    #define DEFINE_STRING_FUNC2(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST2,HX_DYNAMIC_ARG_LIST2,HX_ARG_LIST2,2)
+
+    DEFINE_STRING_FUNC1(charAt);
+    DEFINE_STRING_FUNC1(charCodeAt);
+    DEFINE_STRING_FUNC2(indexOf);
+    DEFINE_STRING_FUNC2(lastIndexOf);
+    DEFINE_STRING_FUNC1(split);
+    DEFINE_STRING_FUNC2(substr);
+    DEFINE_STRING_FUNC2(substring);
+    DEFINE_STRING_FUNC0(toLowerCase);
+    DEFINE_STRING_FUNC0(toUpperCase);
+    DEFINE_STRING_FUNC0(toString);
+
+    STATIC_HX_DEFINE_DYNAMIC_FUNC1(String, fromCharCode, return)
 #endif
-
-#define DEFINE_STRING_FUNC(func,array_list,dynamic_arg_list,arg_list,ARG_C) \
-struct __String_##func : public hx::Object \
-{ \
-   bool __IsFunction() const { return true; } \
-   HX_IS_INSTANCE_OF enum { _hx_ClassId = hx::clsIdClosure }; \
-   String mThis; \
-   __String_##func(const String &inThis) : mThis(inThis) { \
-      HX_OBJ_WB_NEW_MARKED_OBJECT(this); \
-   } \
-   String toString() const{ return HX_CSTRING(#func); } \
-   String __ToString() const{ return HX_CSTRING(#func); } \
-   int __GetType() const { return vtFunction; } \
-   void *__GetHandle() const { return const_cast<char *>(mThis.raw_ptr()); } \
-   int __ArgCount() const { return ARG_C; } \
-   Dynamic __Run(const Array<Dynamic> &inArgs) \
-   { \
-      return mThis.func(array_list); return Dynamic(); \
-   } \
-   Dynamic __run(dynamic_arg_list) \
-   { \
-      return mThis.func(arg_list); return Dynamic(); \
-   } \
-   void __Mark(hx::MarkContext *__inCtx) { HX_MARK_STRING(mThis.raw_ptr()); } \
-   STRING_VISIT_FUNC \
-   void  __SetThis(Dynamic inThis) { mThis = inThis; } \
-}; \
-Dynamic String::func##_dyn()  { return new __String_##func(*this);  }
-
-
-#define DEFINE_STRING_FUNC0(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST0,HX_DYNAMIC_ARG_LIST0,HX_ARG_LIST0,0)
-#define DEFINE_STRING_FUNC1(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST1,HX_DYNAMIC_ARG_LIST1,HX_ARG_LIST1,1)
-#define DEFINE_STRING_FUNC2(func) DEFINE_STRING_FUNC(func,HX_ARR_LIST2,HX_DYNAMIC_ARG_LIST2,HX_ARG_LIST2,2)
-
-DEFINE_STRING_FUNC1(charAt);
-DEFINE_STRING_FUNC1(charCodeAt);
-DEFINE_STRING_FUNC2(indexOf);
-DEFINE_STRING_FUNC2(lastIndexOf);
-DEFINE_STRING_FUNC1(split);
-DEFINE_STRING_FUNC2(substr);
-DEFINE_STRING_FUNC2(substring);
-DEFINE_STRING_FUNC0(toLowerCase);
-DEFINE_STRING_FUNC0(toUpperCase);
-DEFINE_STRING_FUNC0(toString);
 
 hx::Val String::__Field(const String &inString, hx::PropertyAccess inCallProp)
 {
@@ -2174,6 +2409,11 @@ hx::Val String::__Field(const String &inString, hx::PropertyAccess inCallProp)
    return null();
 }
 
+bool String::__GetStatic(const ::String &inName, Dynamic &outValue, ::hx::PropertyAccess inCallProp)
+{
+   if (HX_FIELD_EQ(inName,"fromCharCode")) { outValue = fromCharCode_dyn(); return true; }
+	return false;
+}
 
 static String sStringStatics[] = {
    HX_CSTRING("fromCharCode"),
@@ -2194,56 +2434,8 @@ static String sStringFields[] = {
    String(null())
 };
 
-STATIC_HX_DEFINE_DYNAMIC_FUNC1(String,fromCharCode,return )
-
 namespace hx
 {
-
-
-
-#ifndef HX_WINDOWS
-inline double _wtof(const wchar_t *inStr)
-{
-   #ifdef ANDROID
-   char buf[101];
-   int i;
-   for(i=0;i<100 && inStr[i];i++)
-      buf[i] = inStr[i];
-   buf[i] = '\0';
-   return strtod(buf, 0);
-   #else
-   return wcstod(inStr,0);
-   #endif
-}
-
-#ifdef HX_ANDROID
-int my_wtol(const wchar_t *inStr,wchar_t ** end, int inBase)
-{
-   char buf[101];
-   int i;
-   for(i=0;i<100 && inStr[i];i++)
-      buf[i] = inStr[i];
-   buf[i] = '\0';
-   char *cend = buf;
-   int result = strtol(buf,&cend,inBase);
-   *end = (wchar_t *)inStr + (cend-buf);
-   return result;
-}
-#define wcstol my_wtol
-#endif
-
-inline int _wtoi(const wchar_t *inStr)
-{
-   wchar_t *end = 0;
-   if (!inStr) return 0;
-   long result = 0;
-   if (inStr[0]=='0' && (inStr[1]=='x' || inStr[1]=='X'))
-      result = wcstol(inStr,&end,16);
-   else
-      result = wcstol(inStr,&end,10);
-   return result;
-}
-#endif
 
 
 
@@ -2260,49 +2452,44 @@ public:
       HX_OBJ_WB_GET(this,mValue.raw_ref());
    };
 
-   hx::Class __GetClass() const { return __StringClass; }
+   hx::Class __GetClass() const HXCPP_OVERRIDE { return __StringClass; }
    bool __Is(hx::Object *inClass) const { return dynamic_cast< StringData *>(inClass); }
 
-   virtual int __GetType() const { return vtString; }
-   String __ToString() const { return mValue; }
-   String toString() { return mValue; }
-   double __ToDouble() const
+   int __GetType() const HXCPP_OVERRIDE { return vtString; }
+   String __ToString() const HXCPP_OVERRIDE { return mValue; }
+   String toString() HXCPP_OVERRIDE { return mValue; }
+   double __ToDouble() const HXCPP_OVERRIDE
    {
       if (!mValue.raw_ptr()) return 0;
-
-      #ifdef HX_ANDROID
-      return strtod(mValue.utf8_str(),0);
-      #else
       return atof(mValue.utf8_str());
-      #endif
    }
-   int __length() const { return mValue.length; }
+   int __length() const HXCPP_OVERRIDE { return mValue.length; }
 
-   void __Mark(hx::MarkContext *__inCtx)
+   void __Mark(hx::MarkContext *__inCtx) HXCPP_OVERRIDE
    {
       HX_MARK_MEMBER(mValue);
    }
 
    #ifdef HXCPP_VISIT_ALLOCS
-   void __Visit(hx::VisitContext *__inCtx)
+   void __Visit(hx::VisitContext *__inCtx) HXCPP_OVERRIDE
    {
       HX_VISIT_MEMBER(mValue);
    }
    #endif
 
 
-   int __ToInt() const
+   int __ToInt() const HXCPP_OVERRIDE
    {
       if (!mValue.raw_ptr()) return 0;
       return atoi(mValue.utf8_str());
    }
 
-   int __Compare(const hx::Object *inRHS) const
+   int __Compare(const hx::Object *inRHS) const HXCPP_OVERRIDE
    {
       return mValue.compare( const_cast<hx::Object*>(inRHS)->toString() );
    }
 
-   hx::Val __Field(const String &inString, hx::PropertyAccess inCallProp)
+   hx::Val __Field(const String &inString, hx::PropertyAccess inCallProp) HXCPP_OVERRIDE
    {
       return mValue.__Field(inString, inCallProp);
    }
@@ -2406,4 +2593,6 @@ void String::__boot()
    Static(__StringClass) = hx::_hx_RegisterClass(HX_CSTRING("String"),TCanCast<StringData>,sStringStatics, sStringFields,
            &CreateEmptyString, &CreateString, 0, 0, 0
     );
+   __StringClass->mGetStaticField = &String::__GetStatic;
+   __StringClass->mSetStaticField = &::hx::Class_obj::SetNoStaticField;
 }

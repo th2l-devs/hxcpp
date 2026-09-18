@@ -8,6 +8,8 @@ template<typename T> inline bool null::operator != (const hx::ObjectPtr<T> &O) c
 
 template<typename T> inline bool null::operator == (const Array<T> &O) const { return !O.mPtr; }
 template<typename T> inline bool null::operator != (const Array<T> &O) const { return O.mPtr; }
+template<class TReturn, class... TArgs> inline bool null::operator==(const ::hx::Callable<TReturn(TArgs...)>& O) const { return !O.mPtr; }
+template<class TReturn, class... TArgs> inline bool null::operator!=(const ::hx::Callable<TReturn(TArgs...)>& O) const { return O.mPtr; }
 inline bool null::operator == (const hx::FieldRef &O) const { return !O.HasPointer(); }
 inline bool null::operator != (const hx::FieldRef &O) const { return O.HasPointer(); }
 inline bool null::operator == (const hx::IndexRef &O) const { return !O.HasPointer(); }
@@ -80,8 +82,8 @@ template<> inline double ToDouble(double inValue) { return inValue; }
 template<> inline double ToDouble(int inValue) { return inValue; }
 template<> inline double ToDouble(bool inValue) { return inValue; }
 template<> inline double ToDouble(float inValue) { return inValue; }
-template<> inline double ToDouble(cpp::UInt64 inValue) { return inValue; }
-template<> inline double ToDouble(cpp::Int64 inValue) { return inValue; }
+template<> inline double ToDouble(cpp::UInt64 inValue) { return (double)inValue; }
+template<> inline double ToDouble(cpp::Int64 inValue) { return (double)inValue; }
 template<> inline double ToDouble(null inValue) { return 0; }
 
 
@@ -259,7 +261,7 @@ template<> inline float TCastObject<float>(hx::Object *inObj)
 {
    if (!inObj || (inObj->__GetType()!=::vtFloat && inObj->__GetType()!=::vtInt64 && inObj->__GetType()!=::vtInt))
       return hx::BadCast();
-   return inObj->__ToDouble();
+   return (float)inObj->__ToDouble();
 }
 
 template<> inline String TCastObject<String>(hx::Object *inObj)
@@ -343,6 +345,17 @@ template<> struct DynamicConvertType< Array_obj< ::String> * > { enum { Convert 
 template<typename T> struct DynamicConvertType< Array_obj<T> * > { enum { Convert = sizeof(T) }; };
 template<> struct DynamicConvertType< cpp::VirtualArray_obj * > { enum { Convert = aciVirtualArray }; };
 
+#if (HXCPP_API_LEVEL>=500 && defined(HXCPP_SCRIPTABLE))
+
+// We need to specify callables getting a formal conversion due to an unfortunate edge case involving cppia.
+// Generics are type erased with Dynamic so the parameter is lost at runtime, this means that if a cppia script were
+// to push a closure into a array of Void->Void functions in the host it would not be pushing a callable since cppia
+// does not use them internally.
+// Later when the host perform a static cast on those elements to get a callable it will cause a memory error.
+template<typename T> struct DynamicConvertType< ::hx::Callable_obj<T>* > { enum { Convert = aciAlwaysConvert }; };
+
+#endif
+
 }
 
 
@@ -393,7 +406,7 @@ class HXCPP_EXTERN_CLASS_ATTRIBUTES StringValueIterator : public cpp::StringIter
 public:
    StringValueIterator(const String &inValue) : StringIterator(inValue) { }
 
-   int next() { return value.cca(pos++); }
+   int next() HXCPP_OVERRIDE { return value.cca(pos++); }
 };
 
 class HXCPP_EXTERN_CLASS_ATTRIBUTES StringKeyValueIterator : public cpp::StringIterator<Dynamic>
@@ -401,7 +414,7 @@ class HXCPP_EXTERN_CLASS_ATTRIBUTES StringKeyValueIterator : public cpp::StringI
 public:
    StringKeyValueIterator(const String &inValue) : StringIterator(inValue) { }
 
-   Dynamic next() {
+   Dynamic next() HXCPP_OVERRIDE {
       int p = pos;
       return
         hx::AnonStruct2_obj< int,int >::Create(HX_("key",9f,89,51,00),p,

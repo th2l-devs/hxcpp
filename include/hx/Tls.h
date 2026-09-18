@@ -41,7 +41,7 @@
       {
          mSlot = TlsAlloc();
          TlsSetValue(mSlot,0);
-         #if (defined(HXCPP_M64) || defined(HXCPP_ARM64))
+         #ifdef HXCPP_M64
          mFastOffset = mSlot*sizeof(void *) + 0x1480;
          #else
          if (FAST || mSlot < kMaxInlineSlots)
@@ -58,7 +58,7 @@
 
       inline operator DATA *()
       {
-         #if !defined(HXCPP_M64) && !defined(HXCPP_ARM64) && (_MSC_VER >= 1400)
+         #if !defined(HXCPP_M64) && (_MSC_VER >= 1400)
          const size_t kTibExtraTlsOffset = 0xF94;
 
          if (FAST || mSlot < kMaxInlineSlots)
@@ -84,13 +84,13 @@
 
 
    #define DECLARE_TLS_DATA(TYPE,NAME) \
-      hx::TLSData<TYPE> NAME;
+      ::hx::TLSData<TYPE> NAME;
    #define DECLARE_FAST_TLS_DATA(TYPE,NAME) \
-      hx::TLSData<TYPE,true> NAME;
+      ::hx::TLSData<TYPE,true> NAME;
    #define EXTERN_TLS_DATA(TYPE,NAME) \
-      extern hx::TLSData<TYPE> NAME;
+      extern ::hx::TLSData<TYPE> NAME;
    #define EXTERN_FAST_TLS_DATA(TYPE,NAME) \
-      extern hx::TLSData<TYPE,true> NAME;
+      extern ::hx::TLSData<TYPE,true> NAME;
 
 
   #endif
@@ -147,13 +147,13 @@ struct TLSData
 #else
 
 #define DECLARE_TLS_DATA(TYPE,NAME) \
-   hx::TLSData<TYPE> NAME;
+   ::hx::TLSData<TYPE> NAME;
 #define DECLARE_FAST_TLS_DATA(TYPE,NAME) \
-   hx::TLSData<TYPE,true> NAME;
+   ::hx::TLSData<TYPE,true> NAME;
 #define EXTERN_TLS_DATA(TYPE,NAME) \
-   extern hx::TLSData<TYPE> NAME;
+   extern ::hx::TLSData<TYPE> NAME;
 #define EXTERN_FAST_TLS_DATA(TYPE,NAME) \
-   extern hx::TLSData<TYPE,true> NAME;
+   extern ::hx::TLSData<TYPE,true> NAME;
 
 #endif
 

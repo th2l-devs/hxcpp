@@ -391,10 +391,7 @@ class ProcessManager
       if (inText != null)
          Log.info(inText,"");
 
-      // The full compiler command line, once per file, is the single biggest source
-      // of verbose noise - it now needs -vv. A command that *fails* still prints in
-      // full below, so debuggability is unaffected.
-      if (!Log.quiet && Log.showCommands)
+      if (!Log.quiet)
          Log.v(" - \x1b[1mRunning command:\x1b[0m " + formatMessage(command, args));
       Log.unlock();
 

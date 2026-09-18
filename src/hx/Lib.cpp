@@ -11,10 +11,10 @@
 #include <unistd.h>
 #endif
 
-#if (defined (IPHONE) || defined(EMSCRIPTEN) || defined(STATIC_LINK) || defined(APPLETV) ) && \
+#if (defined (IPHONE) || defined(__EMSCRIPTEN__) || defined(STATIC_LINK) || defined(APPLETV) ) && \
 	!defined(HXCPP_DLL_IMPORT) && (!defined(HXCPP_DLL_EXPORT) || defined(HXCPP_SCRIPTABLE) )
 #define HXCPP_NO_DYNAMIC_LOADING
-#elif !defined(ANDROID) && !defined(HX_WINRT) && !defined(IPHONE) && !defined(EMSCRIPTEN) && \
+#elif !defined(ANDROID) && !defined(HX_WINRT) && !defined(IPHONE) && !defined(__EMSCRIPTEN__) && \
 	!defined(STATIC_LINK) && !defined(APPLETV)
 #define HXCPP_TRY_HAXELIB
 #endif
@@ -71,7 +71,7 @@ typedef void *Module;
 Module hxLoadLibrary(String inLib)
 {
    int flags = RTLD_GLOBAL;
-   #if defined(HXCPP_RTLD_LAZY) || defined(IPHONE) || defined(EMSCRIPTEN) || defined(STATIC_LINK) || defined(APPLETV)
+   #if defined(HXCPP_RTLD_LAZY) || defined(IPHONE) || defined(__EMSCRIPTEN__) || defined(STATIC_LINK) || defined(APPLETV)
    flags |= RTLD_LAZY;
    #else
    flags |= RTLD_NOW;
@@ -132,62 +132,100 @@ public:
      functionName = ("extern::cffi "+mName).makePermanent().raw_ptr();
    }
 
-   virtual int __GetType() const { return vtFunction; }
-   String __ToString() const { return mName; }
-
-   Dynamic __run()
+   int __GetType() const HXCPP_OVERRIDE { return vtFunction; }
+   String __ToString() const HXCPP_OVERRIDE { return mName; }
+#if (HXCPP_API_LEVEL<500)
+   Dynamic __run() HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0, functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=0) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_0)mProc)();
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 0) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_0)mProc)();
    }
-   Dynamic __run(D a)
+   Dynamic __run(D a) HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=1) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_1)mProc)(a.GetPtr());
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 1) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_1)mProc)(a.GetPtr());
    }
-   Dynamic __run(D a,D b)
+   Dynamic __run(D a, D b) HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=2) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_2)mProc)(a.GetPtr(),b.GetPtr());
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 2) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_2)mProc)(a.GetPtr(), b.GetPtr());
    }
-   Dynamic __run(D a,D b,D c)
+   Dynamic __run(D a, D b, D c) HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=3) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_3)mProc)(a.GetPtr(),b.GetPtr(),c.GetPtr());
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 3) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_3)mProc)(a.GetPtr(), b.GetPtr(), c.GetPtr());
    }
-   Dynamic __run(D a,D b,D c,D d)
+   Dynamic __run(D a, D b, D c, D d) HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=4) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_4)mProc)(a.GetPtr(),b.GetPtr(),c.GetPtr(),d.GetPtr());
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 4) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_4)mProc)(a.GetPtr(), b.GetPtr(), c.GetPtr(), d.GetPtr());
    }
-   Dynamic __run(D a,D b,D c,D d,D e)
+   Dynamic __run(D a, D b, D c, D d, D e) HXCPP_OVERRIDE
    {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=5) throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_5)mProc)(a.GetPtr(),b.GetPtr(),c.GetPtr(),d.GetPtr(),e.GetPtr());
-   }
-
-   Dynamic __Run(const Array<Dynamic> &inArgs)
-   {
-      HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi",0,  functionName, __FILE__, __LINE__,0);
-      if (mArgCount!=-1 && mArgCount!=inArgs->length)
-         throw HX_INVALID_ARG_COUNT;
-      if (mProc==0) hx::Throw( HX_NULL_FUNCTION_POINTER );
-      return ((prim_mult)mProc)( (hx::Object **)inArgs->GetBase(), inArgs->length );
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != 5) throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_5)mProc)(a.GetPtr(), b.GetPtr(), c.GetPtr(), d.GetPtr(), e.GetPtr());
    }
 
-   int __Compare(const hx::Object *inRHS) const
+   Dynamic __Run(const Array<Dynamic>& inArgs) HXCPP_OVERRIDE
+   {
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+       if (mArgCount != -1 && mArgCount != inArgs->length)
+           throw HX_INVALID_ARG_COUNT;
+       if (mProc == 0) hx::Throw(HX_NULL_FUNCTION_POINTER);
+       return ((prim_mult)mProc)((hx::Object**)inArgs->GetBase(), inArgs->length);
+   }
+#else
+   Dynamic __Run(const Array<Dynamic>& inArgs) override
+   {
+       HX_STACK_FRAME(hx::EXTERN_CLASS_NAME, "cffi", 0, functionName, __FILE__, __LINE__, 0);
+
+       if (mArgCount != -1 && mArgCount != inArgs->length)
+       {
+           throw HX_INVALID_ARG_COUNT;
+       }
+       if (mProc == 0)
+       {
+           hx::Throw(HX_NULL_FUNCTION_POINTER);
+       }
+
+       switch (mArgCount)
+       {
+       case 0:
+           return ((prim_0)mProc)();
+
+       case 1:
+           return ((prim_1)mProc)(inArgs[0].GetPtr());
+
+       case 2:
+           return ((prim_2)mProc)(inArgs[0].GetPtr(), inArgs[1].GetPtr());
+
+       case 3:
+           return ((prim_3)mProc)(inArgs[0].GetPtr(), inArgs[1].GetPtr(), inArgs[2].GetPtr());
+
+       case 4:
+           return ((prim_4)mProc)(inArgs[0].GetPtr(), inArgs[1].GetPtr(), inArgs[2].GetPtr(), inArgs[3].GetPtr());
+
+       case 5:
+           return ((prim_5)mProc)(inArgs[0].GetPtr(), inArgs[1].GetPtr(), inArgs[2].GetPtr(), inArgs[3].GetPtr(), inArgs[4].GetPtr());
+
+       default:
+           return ((prim_mult)mProc)((hx::Object**)inArgs->GetBase(), inArgs->length);
+       }
+   }
+#endif
+   int __Compare(const hx::Object *inRHS) const HXCPP_OVERRIDE
    {
       const ExternalPrimitive *other = dynamic_cast<const ExternalPrimitive *>(inRHS);
       if (!other)
@@ -352,21 +390,13 @@ String __hxcpp_get_bin_dir()
 {
    return
 #if defined(HX_WINRT)
-  #ifdef HXCPP_ARM64
-    HX_CSTRING("WinRTArm64");
-  #elif defined(HXCPP_ARMV7)
-    HX_CSTRING("WinRTArm");
-  #elif defined(HXCPP_M64)
+  #ifdef HXCPP_M64
     HX_CSTRING("WinRT64");
   #else
     HX_CSTRING("WinRT");
   #endif
 #elif defined(_WIN32)
-  #ifdef HXCPP_ARM64
-    HX_CSTRING("WindowsArm64");
-  #elif defined(HXCPP_ARMV7)
-    HX_CSTRING("WindowsArm");
-  #elif defined(HXCPP_M64)
+  #ifdef HXCPP_M64
     HX_CSTRING("Windows64");
   #else
     HX_CSTRING("Windows");
@@ -386,7 +416,9 @@ String __hxcpp_get_bin_dir()
     HX_CSTRING("webOS");
 #elif defined(BLACKBERRY)
     HX_CSTRING("BlackBerry");
-#elif defined(EMSCRIPTEN)
+#elif defined(RASPBERRYPI)
+    HX_CSTRING("RPi");
+#elif defined(__EMSCRIPTEN__)
     HX_CSTRING("Emscripten");
 #elif defined(TIZEN)
     HX_CSTRING("Tizen");
@@ -399,11 +431,7 @@ String __hxcpp_get_bin_dir()
 #elif defined(APPLETVOS)
     HX_CSTRING("AppleTVOS");
 #else
-  #ifdef HXCPP_ARM64
-    HX_CSTRING("LinuxArm64");
-  #elif defined(HXCPP_ARMV7)
-    HX_CSTRING("LinuxArm");
-  #elif defined(HXCPP_M64)
+  #ifdef HXCPP_M64
     HX_CSTRING("Linux64");
   #else
     HX_CSTRING("Linux");
@@ -426,7 +454,7 @@ String __hxcpp_get_dll_extension()
     HX_CSTRING(".sim.dylib");
 #elif defined(__APPLE__)
     HX_CSTRING(".dylib");
-#elif defined(ANDROID) || defined(GPH) || defined(WEBOS) || defined(BLACKBERRY) || defined(EMSCRIPTEN) || defined(TIZEN)
+#elif defined(ANDROID) || defined(GPH) || defined(WEBOS)  || defined(BLACKBERRY) || defined(__EMSCRIPTEN__) || defined(TIZEN)
     HX_CSTRING(".so");
 #else
     HX_CSTRING(".dso");

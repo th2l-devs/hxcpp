@@ -3,6 +3,7 @@
 
 #include <hx/Tls.h>
 #include <stdio.h>
+#include <atomic>
 
 // Under the current scheme (as defined by HX_HCSTRING/HX_CSTRING in hxcpp.h)
 //  each constant string data is prepended with a 4-byte header that says the string
@@ -36,7 +37,6 @@ HXCPP_EXTERN_CLASS_ATTRIBUTES void   __hxcpp_gc_compact();
 HXCPP_EXTERN_CLASS_ATTRIBUTES int   __hxcpp_gc_trace(hx::Class inClass, bool inPrint);
 HXCPP_EXTERN_CLASS_ATTRIBUTES int   __hxcpp_gc_used_bytes();
 HXCPP_EXTERN_CLASS_ATTRIBUTES double __hxcpp_gc_mem_info(int inWhat);
-HXCPP_EXTERN_CLASS_ATTRIBUTES double __hxcpp_gc_pause_info(int inWhat);
 HXCPP_EXTERN_CLASS_ATTRIBUTES void  __hxcpp_enter_gc_free_zone();
 HXCPP_EXTERN_CLASS_ATTRIBUTES void  __hxcpp_exit_gc_free_zone();
 HXCPP_EXTERN_CLASS_ATTRIBUTES void  __hxcpp_gc_safe_point();
@@ -114,10 +114,10 @@ namespace hx
 // If inSize is small (<4k) it will be allocated from the immix pool.
 // Larger, and it will be allocated from a separate memory pool
 // inIsObject specifies whether "__Mark"  should be called on the resulting object
-void *InternalNew(int inSize,bool inIsObject);
+void *InternalNew(size_t inSize,bool inIsObject);
 
 // Used internall - realloc array data
-void *InternalRealloc(int inFromSize, void *inData,int inSize,bool inAllowExpansion=false);
+void *InternalRealloc(size_t inFromSize, void *inData,size_t inSize,bool inAllowExpansion=false);
 
 void InternalReleaseMem(void *inMem);
 
@@ -125,7 +125,7 @@ unsigned int ObjectSizeSafe(void *inData);
 
 // Const buffers are allocated outside the GC system, and do not require marking
 // String buffers can optionally have a pre-computed hash appended with this method
-void *InternalCreateConstBuffer(const void *inData,int inSize,bool inAddStringHash=false);
+void *InternalCreateConstBuffer(const void *inData, size_t inSize, bool inAddStringHash=false);
 
 // Called after collection by an unspecified thread
 typedef void (*finalizer)(hx::Object *v);
@@ -155,17 +155,17 @@ void  GCSetFinalizer( hx::Object *, hx::finalizer f );
 // This automatically gets checked when you call "new", but if you are in long-running
 //  loop with no new call, you might starve another thread if you to not check this.
 //  0xffffffff = pause requested
-extern int gPauseForCollect;
+extern std::atomic_uint gPauseForCollect;
 
 
 // Minimum total memory - used + buffer for new objects
-extern int sgMinimumWorkingMemory;
+extern size_t sgMinimumWorkingMemory;
 
 // Minimum free memory - not counting used memory
-extern int sgMinimumFreeSpace;
+extern size_t sgMinimumFreeSpace;
 
 // Also ensure that the free memory is larger than this amount of used memory
-extern int sgTargetFreeSpacePercentage;
+extern size_t sgTargetFreeSpacePercentage;
 
 
 extern HXCPP_EXTERN_CLASS_ATTRIBUTES int gByteMarkID;
@@ -198,8 +198,8 @@ char *NewString(int inLen);
 // The concept of 'private' is from the old conservative Gc method.
 // Now with explicit marking, these functions do the same thing, which is
 //  to allocate some GC memory and optionally copy the 'inData' into those bytes
-HXCPP_EXTERN_CLASS_ATTRIBUTES void *NewGCBytes(void *inData,int inSize);
-HXCPP_EXTERN_CLASS_ATTRIBUTES void *NewGCPrivate(void *inData,int inSize);
+HXCPP_EXTERN_CLASS_ATTRIBUTES void *NewGCBytes(void *inData,size_t inSize);
+HXCPP_EXTERN_CLASS_ATTRIBUTES void *NewGCPrivate(void *inData,size_t inSize);
 
 // Force a collect from the calling thread
 // Only one thread should call this at a time
@@ -288,7 +288,7 @@ namespace hx
 
 #define HX_USE_INLINE_IMMIX_OPERATOR_NEW
 
-//#define HX_STACK_CTX ::hx::ImmixAllocator *_hx_stack_ctx =  hx::gMultiThreadMode ? hx::tlsImmixAllocator : hx::gMainThreadAlloc;
+//#define HX_STACK_CTX ::hx::ImmixAllocator *_hx_stack_ctx =  ::hx::gMultiThreadMode ? ::hx::tlsImmixAllocator : ::hx::gMainThreadAlloc;
 
 
 // Each line ast 128 bytes (2^7)
@@ -323,22 +323,22 @@ namespace hx
 
 // The gPauseForCollect bits will turn spaceEnd negative, and so force the slow path
 #ifndef HXCPP_SINGLE_THREADED_APP
-   #define WITH_PAUSE_FOR_COLLECT_FLAG | hx::gPauseForCollect
+   #define WITH_PAUSE_FOR_COLLECT_FLAG | ::hx::gPauseForCollect
 #else
    #define WITH_PAUSE_FOR_COLLECT_FLAG
 #endif
 
 
 
-class StackContext;
+struct StackContext;
 
 EXTERN_FAST_TLS_DATA(StackContext, tlsStackContext);
 
 extern StackContext *gMainThreadContext;
 
 extern unsigned int gImmixStartFlag[128];
-extern int gMarkID;
-extern int gMarkIDWithContainer;
+extern unsigned int gMarkID;
+extern unsigned int gMarkIDWithContainer;
 extern void BadImmixAlloc();
 
 
@@ -346,47 +346,47 @@ class ImmixAllocator
 {
 public:
    virtual ~ImmixAllocator() {}
-   virtual void *CallAlloc(int inSize,unsigned int inObjectFlags) = 0;
+   virtual void *CallAlloc(size_t inSize,unsigned int inObjectFlags) = 0;
    virtual void SetupStackAndCollect(bool inMajor, bool inForceCompact, bool inLocked=false,bool inFreeIsFragged=false) = 0;
 
    #ifdef HXCPP_GC_NURSERY
    unsigned char  *spaceFirst;
    unsigned char  *spaceOversize;
    #else
-   int            spaceStart;
-   int            spaceEnd;
+   size_t         spaceStart;
+   size_t         spaceEnd;
    #endif
    unsigned int   *allocStartFlags;
    unsigned char  *allocBase;
 
 
 
-   // These allocate the function using the garbage-colleced malloc
+   // These allocate the function using the garbage-collected malloc
    inline static void *alloc(ImmixAllocator *alloc, size_t inSize, bool inContainer, const char *inName )
    {
       #ifdef HXCPP_GC_NURSERY
 
          #ifdef HXCPP_ALIGN_ALLOC
          // make sure buffer is 8-byte aligned
-         unsigned char *buffer = alloc->spaceFirst + ( (size_t)alloc->spaceFirst & 4 );
+         unsigned char* buffer{ alloc->spaceFirst + (reinterpret_cast<uintptr_t>(alloc->spaceFirst) & 4) };
          #else
-         unsigned char *buffer = alloc->spaceFirst;
+         unsigned char* buffer{ alloc->spaceFirst };
          #endif
-         unsigned char *end = buffer + (inSize + 4);
+         unsigned char* end{ buffer + (inSize + 4) };
 
          if ( end > alloc->spaceOversize )
          {
             // Fall back to external method
-            buffer = (unsigned char *)alloc->CallAlloc(inSize, inContainer ? IMMIX_ALLOC_IS_CONTAINER : 0);
+            buffer = static_cast<unsigned char*>(alloc->CallAlloc(inSize, inContainer ? IMMIX_ALLOC_IS_CONTAINER : 0));
          }
          else
          {
             alloc->spaceFirst = end;
 
             if (inContainer)
-               ((unsigned int *)buffer)[-1] = inSize | IMMIX_ALLOC_IS_CONTAINER;
+                reinterpret_cast<unsigned int*>(buffer)[-1] = static_cast<unsigned int>(inSize) | IMMIX_ALLOC_IS_CONTAINER;
             else
-               ((unsigned int *)buffer)[-1] = inSize;
+                reinterpret_cast<unsigned int*>(buffer)[-1] = static_cast<unsigned int>(inSize);
          }
 
          #if defined(HXCPP_GC_CHECK_POINTER) && defined(HXCPP_GC_DEBUG_ALWAYS_MOVE)
@@ -402,30 +402,30 @@ public:
       #else
          // Inline the fast-path if we can
          // We know the object can hold a pointer (vtable) and that the size is int-aligned
-         int start = alloc->spaceStart;
+         size_t start{ alloc->spaceStart };
          #ifdef HXCPP_ALIGN_ALLOC
             // Ensure odd alignment in 8 bytes
-            start += 4 - (start & 4);
+            start += 4 - (start & size_t{ 4 });
          #endif
-         int end = start + sizeof(int) + inSize;
+          size_t end{ start + sizeof(int) + inSize };
 
          if ( end <= alloc->spaceEnd )
          {
             alloc->spaceStart = end;
 
-            unsigned int *buffer = (unsigned int *)(alloc->allocBase + start);
+            unsigned int* buffer{ reinterpret_cast<unsigned int*>(alloc->allocBase + start) };
 
-            int startRow = start>>IMMIX_LINE_BITS;
+            size_t startRow{ start >> IMMIX_LINE_BITS };
 
             alloc->allocStartFlags[ startRow ] |= gImmixStartFlag[start&127];
 
             if (inContainer)
-               *buffer++ =  (( (end+(IMMIX_LINE_LEN-1))>>IMMIX_LINE_BITS) -startRow) |
-                            (inSize<<IMMIX_ALLOC_SIZE_SHIFT) |
+               *buffer++ =  static_cast<unsigned int>(( (end+(IMMIX_LINE_LEN-1))>>IMMIX_LINE_BITS) -startRow) |
+                            static_cast<unsigned int>(inSize<<IMMIX_ALLOC_SIZE_SHIFT) |
                             hx::gMarkIDWithContainer;
             else
-               *buffer++ =  (( (end+(IMMIX_LINE_LEN-1))>>IMMIX_LINE_BITS) -startRow) |
-                            (inSize<<IMMIX_ALLOC_SIZE_SHIFT) |
+               *buffer++ =  static_cast<unsigned int>(( (end+(IMMIX_LINE_LEN-1))>>IMMIX_LINE_BITS) -startRow) |
+                            static_cast<unsigned int>(inSize<<IMMIX_ALLOC_SIZE_SHIFT) |
                             hx::gMarkID;
 
             #if defined(HXCPP_GC_CHECK_POINTER) && defined(HXCPP_GC_DEBUG_ALWAYS_MOVE)
@@ -458,19 +458,19 @@ typedef ImmixAllocator Ctx;
 #ifdef HXCPP_GC_GENERATIONAL
   #define HX_OBJ_WB_CTX(obj,value,ctx) { \
         unsigned char &mark =  ((unsigned char *)(obj))[ HX_ENDIAN_MARK_ID_BYTE]; \
-        if (mark == hx::gByteMarkID && value && !((unsigned char *)(value))[ HX_ENDIAN_MARK_ID_BYTE  ] ) { \
+        if (mark == ::hx::gByteMarkID && value && !((unsigned char *)(value))[ HX_ENDIAN_MARK_ID_BYTE  ] ) { \
             mark|=HX_GC_REMEMBERED; \
             ctx->pushReferrer(obj); \
      } }
   #define HX_OBJ_WB_PESSIMISTIC_CTX(obj,ctx) { \
      unsigned char &mark =  ((unsigned char *)(obj))[ HX_ENDIAN_MARK_ID_BYTE]; \
-     if (mark == hx::gByteMarkID)  { \
+     if (mark == ::hx::gByteMarkID)  { \
         mark|=HX_GC_REMEMBERED; \
         ctx->pushReferrer(obj); \
      } }
   // I'm not sure if this will ever trigger...
   #define HX_OBJ_WB_NEW_MARKED_OBJECT(obj) { \
-     if (((unsigned char *)(obj))[ HX_ENDIAN_MARK_ID_BYTE]==hx::gByteMarkID) hx::NewMarkedObject(obj); \
+     if (((unsigned char *)(obj))[ HX_ENDIAN_MARK_ID_BYTE]==::hx::gByteMarkID) ::hx::NewMarkedObject(obj); \
   }
 #else
   #define HX_OBJ_WB_CTX(obj,value,ctx)
@@ -493,7 +493,7 @@ HXCPP_EXTERN_CLASS_ATTRIBUTES void NewMarkedObject(hx::Object *inPtr);
 
 inline void MarkAlloc(void *inPtr ,hx::MarkContext *__inCtx)
 {
-   #ifdef EMSCRIPTEN
+   #ifdef __EMSCRIPTEN__
    // Unaligned must be constants...
    if ( !( ((size_t)inPtr) & 3) )
    #endif
@@ -503,7 +503,7 @@ inline void MarkAlloc(void *inPtr ,hx::MarkContext *__inCtx)
 }
 inline void MarkObjectAlloc(hx::Object *inPtr ,hx::MarkContext *__inCtx)
 {
-   #ifdef EMSCRIPTEN
+   #ifdef __EMSCRIPTEN__
    // Unaligned must be constants...
    if ( !( ((size_t)inPtr) & 3) )
    #endif
@@ -524,12 +524,12 @@ inline void MarkObjectAlloc(hx::Object *inPtr ,hx::MarkContext *__inCtx)
 
 #define HX_MARK_ARG __inCtx
 //#define HX_MARK_ADD_ARG ,__inCtx
-#define HX_MARK_PARAMS hx::MarkContext *__inCtx
-//#define HX_MARK_ADD_PARAMS ,hx::MarkContext *__inCtx
+#define HX_MARK_PARAMS ::hx::MarkContext *__inCtx
+//#define HX_MARK_ADD_PARAMS ,::hx::MarkContext *__inCtx
 
 #ifdef HXCPP_VISIT_ALLOCS
 #define HX_VISIT_ARG __inCtx
-#define HX_VISIT_PARAMS hx::VisitContext *__inCtx
+#define HX_VISIT_PARAMS ::hx::VisitContext *__inCtx
 #else
 #define HX_VISIT_ARG
 #define HX_VISIT_PARAMS
@@ -545,40 +545,40 @@ inline void MarkObjectAlloc(hx::Object *inPtr ,hx::MarkContext *__inCtx)
 
 #ifdef HXCPP_DEBUG
 
-#define HX_MARK_MEMBER_NAME(x,name) { hx::MarkSetMember(name, __inCtx); hx::MarkMember(x, __inCtx ); }
-#define HX_MARK_BEGIN_CLASS(x) hx::MarkPushClass(#x, __inCtx );
-#define HX_MARK_END_CLASS() hx::MarkPopClass(__inCtx );
-#define HX_MARK_MEMBER(x) { hx::MarkSetMember(0, __inCtx); hx::MarkMember(x, __inCtx ); }
-#define HX_MARK_MEMBER_ARRAY(x,len) { hx::MarkSetMember(0, __inCtx); hx::MarkMemberArray(x, len, __inCtx ); }
+#define HX_MARK_MEMBER_NAME(x,name) { ::hx::MarkSetMember(name, __inCtx); ::hx::MarkMember(x, __inCtx ); }
+#define HX_MARK_BEGIN_CLASS(x) ::hx::MarkPushClass(#x, __inCtx );
+#define HX_MARK_END_CLASS() ::hx::MarkPopClass(__inCtx );
+#define HX_MARK_MEMBER(x) { ::hx::MarkSetMember(0, __inCtx); ::hx::MarkMember(x, __inCtx ); }
+#define HX_MARK_MEMBER_ARRAY(x,len) { ::hx::MarkSetMember(0, __inCtx); ::hx::MarkMemberArray(x, len, __inCtx ); }
 
 #else
 
-#define HX_MARK_MEMBER_NAME(x,name) hx::MarkMember(x, __inCtx )
+#define HX_MARK_MEMBER_NAME(x,name) ::hx::MarkMember(x, __inCtx )
 #define HX_MARK_BEGIN_CLASS(x)
 #define HX_MARK_END_CLASS()
-#define HX_MARK_MEMBER(x) hx::MarkMember(x, __inCtx )
-#define HX_MARK_MEMBER_ARRAY(x,len) hx::MarkMemberArray(x, len, __inCtx )
+#define HX_MARK_MEMBER(x) ::hx::MarkMember(x, __inCtx )
+#define HX_MARK_MEMBER_ARRAY(x,len) ::hx::MarkMemberArray(x, len, __inCtx )
 
 #endif
 
-#define HX_MARK_OBJECT(ioPtr) if (ioPtr) hx::MarkObjectAlloc(ioPtr, __inCtx );
+#define HX_MARK_OBJECT(ioPtr) if (ioPtr) ::hx::MarkObjectAlloc(ioPtr, __inCtx );
 
 
 
 
 #define HX_MARK_STRING(ioPtr) \
-   if (ioPtr) hx::MarkAlloc((void *)ioPtr, __inCtx );
+   if (ioPtr) ::hx::MarkAlloc((void *)ioPtr, __inCtx );
 
-#define HX_MARK_ARRAY(ioPtr) { if (ioPtr) hx::MarkAlloc((void *)ioPtr, __inCtx ); }
-
-
+#define HX_MARK_ARRAY(ioPtr) { if (ioPtr) ::hx::MarkAlloc((void *)ioPtr, __inCtx ); }
 
 
-#define HX_VISIT_MEMBER_NAME(x,name) hx::VisitMember(x, __inCtx )
-#define HX_VISIT_MEMBER(x) hx::VisitMember(x, __inCtx )
+
+
+#define HX_VISIT_MEMBER_NAME(x,name) ::hx::VisitMember(x, __inCtx )
+#define HX_VISIT_MEMBER(x) ::hx::VisitMember(x, __inCtx )
 
 #define HX_VISIT_OBJECT(ioPtr) \
-  { if (ioPtr && !(((unsigned char *)ioPtr)[HX_GC_CONST_ALLOC_MARK_OFFSET] & HX_GC_CONST_ALLOC_MARK_BIT) ) __inCtx->visitObject( (hx::Object **)&ioPtr); }
+  { if (ioPtr && !(((unsigned char *)ioPtr)[HX_GC_CONST_ALLOC_MARK_OFFSET] & HX_GC_CONST_ALLOC_MARK_BIT) ) __inCtx->visitObject( (::hx::Object **)&ioPtr); }
 
 #define HX_VISIT_STRING(ioPtr) \
    if (ioPtr && !(((unsigned char *)ioPtr)[HX_GC_CONST_ALLOC_MARK_OFFSET] & HX_GC_CONST_ALLOC_MARK_BIT) ) __inCtx->visitAlloc((void **)&ioPtr);

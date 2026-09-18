@@ -49,16 +49,16 @@ public:
    }
 
 
-   virtual int __GetType() const { return mType; }
-   virtual hx::ObjectPtr<hx::Class_obj> __GetClass() const { return 0; }
+   int __GetType() const HXCPP_OVERRIDE { return mType; }
+   hx::ObjectPtr<hx::Class_obj> __GetClass() const HXCPP_OVERRIDE { return 0; }
    virtual bool __IsClass(hx::Class inClass ) const { return false; }
 
-   virtual void *__GetHandle() const
+   void *__GetHandle() const HXCPP_OVERRIDE
    {
       return mHandle;
    }
 
-   void __Mark(hx::MarkContext *__inCtx)
+   void __Mark(hx::MarkContext *__inCtx) HXCPP_OVERRIDE
    {
       HX_MARK_MEMBER(_hxcpp_toString);
       if (mMarkSize>=sizeof(void *) && mHandle)
@@ -68,7 +68,7 @@ public:
    }
 
    #ifdef HXCPP_VISIT_ALLOCS
-   void __Visit(hx::VisitContext *__inCtx)
+   void __Visit(hx::VisitContext *__inCtx) HXCPP_OVERRIDE
    {
       HX_VISIT_MEMBER(_hxcpp_toString);
       if (mFinalizer)
@@ -100,7 +100,7 @@ public:
       mHandle = 0;
    }
 
-   String toString()
+   String toString() HXCPP_OVERRIDE
    {
       if (_hxcpp_toString.mPtr)
          return _hxcpp_toString( Dynamic(this) );
@@ -115,14 +115,14 @@ public:
              HX_CSTRING(")");
    }
 
-   hx::Val __Field(const String &inString, hx::PropertyAccess inCallProp)
+   hx::Val __Field(const String &inString, hx::PropertyAccess inCallProp) HXCPP_OVERRIDE
    {
       if (inString==HX_CSTRING("_hxcpp_toString")) return _hxcpp_toString;
       if (inString==HX_CSTRING("_hxcpp_kind")) return __hxcpp_get_kind(this);
       return hx::Object::__Field(inString, inCallProp);
    }
 
-   hx::Val __SetField(const String &inName,const hx::Val &inValue, hx::PropertyAccess inCallProp)
+   hx::Val __SetField(const String &inName,const hx::Val &inValue, hx::PropertyAccess inCallProp) HXCPP_OVERRIDE
    {
       if (inName==HX_CSTRING("_hxcpp_toString"))
       {
@@ -669,7 +669,12 @@ void val_buffer(buffer inBuffer,value inValue)
 hx::Object * val_call0(hx::Object * arg1) THROWS
 {
    if (!arg1) Dynamic::ThrowBadFunctionError();
+
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1).GetPtr();
+#else
    return arg1->__run().GetPtr();
+#endif
 }
 
 hx::Object * val_call0_traceexcept(hx::Object * arg1) THROWS
@@ -677,7 +682,11 @@ hx::Object * val_call0_traceexcept(hx::Object * arg1) THROWS
    try
    {
    if (!arg1) Dynamic::ThrowBadFunctionError();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1).GetPtr();
+#else
    return arg1->__run().GetPtr();
+#endif
    }
    catch(Dynamic e)
    {
@@ -692,21 +701,33 @@ hx::Object * val_call0_traceexcept(hx::Object * arg1) THROWS
 hx::Object * val_call1(hx::Object * arg1,hx::Object * arg2) THROWS
 {
    if (!arg1) Dynamic::ThrowBadFunctionError();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1, arg2).GetPtr();
+#else
    return arg1->__run(arg2).GetPtr();
+#endif
 }
 
 
 hx::Object * val_call2(hx::Object * arg1,hx::Object * arg2,hx::Object * arg3) THROWS
 {
    if (!arg1) Dynamic::ThrowBadFunctionError();
-   return arg1->__run(arg2,arg3).GetPtr();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1, arg2, arg3).GetPtr();
+#else
+   return arg1->__run(arg2, arg3).GetPtr();
+#endif
 }
 
 
 hx::Object * val_call3(hx::Object * arg1,hx::Object * arg2,hx::Object * arg3,hx::Object * arg4) THROWS
 {
    if (!arg1) Dynamic::ThrowBadFunctionError();
-   return arg1->__run(arg2,arg3,arg4).GetPtr();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1, arg2, arg3, arg4).GetPtr();
+#else
+   return arg1->__run(arg2, arg3, arg4).GetPtr();
+#endif
 }
 
 
@@ -724,35 +745,55 @@ hx::Object * val_callN(hx::Object * arg1,hx::Object ** arg2, int nCount) THROWS
 hx::Object * val_ocall0(hx::Object * arg1,int arg2) THROWS
 {
    if (!arg1) hx::Throw(HX_INVALID_OBJECT);
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1->__IField(arg2)).GetPtr();
+#else
    return arg1->__IField(arg2)->__run().GetPtr();
+#endif
 }
 
 
 hx::Object * val_ocall1(hx::Object * arg1,int arg2,hx::Object * arg3) THROWS
 {
    if (!arg1) hx::Throw(HX_INVALID_OBJECT);
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1->__IField(arg2), arg3).GetPtr();
+#else
    return arg1->__IField(arg2)->__run(arg3).GetPtr();
+#endif
 }
 
 
 hx::Object * val_ocall2(hx::Object * arg1,int arg2,hx::Object * arg3,hx::Object * arg4) THROWS
 {
    if (!arg1) hx::Throw(HX_INVALID_OBJECT);
-   return arg1->__IField(arg2)->__run(arg3,arg4).GetPtr();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1->__IField(arg2), arg3, arg4).GetPtr();
+#else
+   return arg1->__IField(arg2)->__run(arg3, arg4).GetPtr();
+#endif
 }
 
 
 hx::Object * val_ocall3(hx::Object * arg1,int arg2,hx::Object * arg3,hx::Object * arg4,hx::Object * arg5) THROWS
 {
    if (!arg1) hx::Throw(HX_INVALID_OBJECT);
-   return arg1->__IField(arg2)->__run(arg3,arg4,arg5).GetPtr();
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1->__IField(arg2), arg3, arg4, arg5).GetPtr();
+#else
+   return arg1->__IField(arg2)->__run(arg3, arg4, arg5).GetPtr();
+#endif
 }
 
 
 hx::Object * val_ocallN(hx::Object * arg1,int arg2,hx::Object * arg3) THROWS
 {
    if (!arg1) hx::Throw(HX_INVALID_OBJECT);
+#if (HXCPP_API_LEVEL>=500)
+   return hx::invoker::invoke(arg1->__IField(arg2), Dynamic(arg3)).GetPtr();
+#else
    return arg1->__IField(arg2)->__run(Dynamic(arg3)).GetPtr();
+#endif
 }
 
 
