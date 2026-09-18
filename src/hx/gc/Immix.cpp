@@ -5288,22 +5288,6 @@ public:
       if (!generational)
          sWorkingMemorySize = std::max( mem + targetFree, (size_t)hx::sgMinimumWorkingMemory);
 
-      #if !(defined(HXCPP_GC_MOVING) && defined(HXCPP_VISIT_ALLOCS))
-      // Non-moving builds otherwise never hand memory back: release already-empty groups on a full collect (forced compact targets zero).
-      if (full)
-      {
-         size_t targetMem = inForceCompact ? 0 :
-             std::max( mem + targetFree, (size_t)hx::sgMinimumWorkingMemory ) +
-             (2<<(IMMIX_BLOCK_GROUP_BITS+IMMIX_BLOCK_BITS));
-         size_t have = GetWorkingMemory();
-         if (have > targetMem)
-         {
-            releaseEmptyGroups(stats, have - targetMem);
-            if (mAllBlocks.size() > 0)
-               std::stable_sort(&mAllBlocks[0], &mAllBlocks[0] + mAllBlocks.size(), SortByBlockPtr );
-         }
-      }
-      #endif
 
       #if defined(SHOW_FRAGMENTATION) || defined(SHOW_MEM_EVENTS)
       GCLOG("Target memory %s, using %s\n",  formatBytes(sWorkingMemorySize).c_str(), formatBytes(mem).c_str() );
