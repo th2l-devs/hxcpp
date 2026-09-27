@@ -1666,6 +1666,7 @@ struct GlobalChunks
       int expected{ 0 };
       while(false == processListPopLock.compare_exchange_strong(expected, 1))
       {
+         expected = 0;
          // Spin
          #ifdef PROFILE_THREAD_USAGE
          sSpinCount++;
@@ -1750,6 +1751,7 @@ struct GlobalChunks
       int expected{ 0 };
       while(false == freeListPopLock.compare_exchange_strong(expected, 1))
       {
+         expected = 0;
          // Spin
          #ifdef PROFILE_THREAD_USAGE
          sSpinCount++;
